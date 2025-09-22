@@ -1,4 +1,4 @@
-package com.digitalarkcorp.file_storage;
+package com.digitalarkcorp.filestorage;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

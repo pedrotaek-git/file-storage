@@ -1,4 +1,4 @@
-package com.digitalarkcorp.file_storage;
+package com.digitalarkcorp.filestorage;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
