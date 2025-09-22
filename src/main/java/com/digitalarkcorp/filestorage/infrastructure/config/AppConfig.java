@@ -5,7 +5,7 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 @EnableConfigurationProperties({
-        PaginationProperties.class
+        PaginationProperties.class,
+        StorageProperties.class
 })
-public class AppConfig {
-}
+public class AppConfig { }

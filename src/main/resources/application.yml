@@ -1,21 +1,18 @@
 server:
   port: ${APP_PORT:8080}
 
+app:
+  paging:
+    defaultSize: 20
+    maxSize: 100
+  storage:
+    endpoint: http://localhost:9000
+    accessKey: minioadmin
+    secretKey: minioadmin
+    bucket: files
+    region: us-east-1
+    secure: false
 spring:
   data:
     mongodb:
-      uri: ${MONGO_URI:mongodb://mongo:27017/filestorage}
-
-app:
-  storage:
-    endpoint: ${S3_ENDPOINT:http://minio:9000}
-    accessKey: ${S3_ACCESS_KEY:minioadmin}
-    secretKey: ${S3_SECRET_KEY:minioadmin}
-    bucket: ${S3_BUCKET:files}
-    region: ${S3_REGION:us-east-1}
-    secure: ${S3_SECURE:false}
-  limits:
-    maxTags: 5
-  pagination:
-    defaultSize: 20
-    maxSize: 100
+      uri: mongodb://localhost:27017/filestorage

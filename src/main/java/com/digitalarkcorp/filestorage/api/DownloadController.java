@@ -1,9 +1,11 @@
 package com.digitalarkcorp.filestorage.api;
 
 import com.digitalarkcorp.filestorage.application.FileService;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.io.InputStream;
 
@@ -17,12 +19,13 @@ public class DownloadController {
     }
 
     @GetMapping("/d/{linkId}")
-    public ResponseEntity<byte[]> download(@PathVariable("linkId") String linkId) throws Exception {
-        try (InputStream in = service.downloadByLinkId(linkId)) {
-            byte[] bytes = in.readAllBytes();
-            return ResponseEntity.ok()
-                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                    .body(bytes);
-        }
+    public ResponseEntity<StreamingResponseBody> download(@PathVariable("linkId") String linkId) {
+        InputStream in = service.downloadByLinkId(linkId);
+        StreamingResponseBody body = out -> in.transferTo(out);
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .body(body);
     }
 }
