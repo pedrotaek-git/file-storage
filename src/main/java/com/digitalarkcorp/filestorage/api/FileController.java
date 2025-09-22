@@ -1,96 +1,120 @@
 package com.digitalarkcorp.filestorage.api;
 
-import com.digitalarkcorp.filestorage.api.dto.*;
+import com.digitalarkcorp.filestorage.api.dto.FileResponse;
+import com.digitalarkcorp.filestorage.api.dto.ListQuery;
+import com.digitalarkcorp.filestorage.api.dto.RenameRequest;
+import com.digitalarkcorp.filestorage.api.dto.SortBy;
+import com.digitalarkcorp.filestorage.api.dto.SortDir;
+import com.digitalarkcorp.filestorage.api.dto.UploadRequest;
 import com.digitalarkcorp.filestorage.api.errors.BadRequestException;
 import com.digitalarkcorp.filestorage.application.FileService;
-import com.digitalarkcorp.filestorage.domain.FileMetadata;
-import com.digitalarkcorp.filestorage.domain.Visibility;
+import com.digitalarkcorp.filestorage.infrastructure.config.PaginationProperties;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.util.MimeTypeUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
 import java.util.List;
 
 @RestController
-@RequestMapping
 public class FileController {
 
     private final FileService service;
+    private final PaginationProperties pagination;
 
-    public FileController(FileService service) {
+    public FileController(FileService service, PaginationProperties pagination) {
         this.service = service;
+        this.pagination = pagination;
     }
 
-    private static String requireUserId(String header) {
-        if (header == null || header.isBlank()) {
-            throw new BadRequestException("Missing X-User-Id header");
-        }
-        return header;
-    }
-
-    @PostMapping(value = "/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(
+            path = "/files",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
     public FileResponse upload(
-            @RequestHeader(name = "X-User-Id", required = false) String userId,
+            @RequestHeader("X-User-Id") String ownerId,
             @RequestPart("metadata") @Valid UploadRequest meta,
             @RequestPart("file") MultipartFile file
-    ) throws IOException {
-
-        String ownerId = requireUserId(userId);
-
+    ) {
+        if (file == null || file.isEmpty()) {
+            throw new BadRequestException("File part is required");
+        }
         String contentType = (file.getContentType() != null && !file.getContentType().isBlank())
                 ? file.getContentType()
-                : MimeTypeUtils.APPLICATION_OCTET_STREAM_VALUE;
-
-        // use the enum directly (no valueOf)
-        Visibility visibility = meta.visibility();
-
-        FileMetadata saved = service.upload(
-                ownerId,
-                meta.filename(),
-                visibility,
-                meta.tags(),
-                contentType,
-                file.getInputStream(),
-                file.getSize()
-        );
-        return FileResponse.from(saved);
+                : "application/octet-stream";
+        try {
+            return FileResponse.from(
+                    service.upload(
+                            ownerId,
+                            meta.filename(),
+                            meta.visibility(),
+                            meta.tags(),
+                            contentType,
+                            file.getInputStream(),
+                            file.getSize()
+                    )
+            );
+        } catch (Exception e) {
+            // converte IOException/Runtime para 500 genérico; handlers específicos tratam casos conhecidos
+            throw new RuntimeException("Failed to process upload", e);
+        }
     }
 
-    @GetMapping(value = "/files", produces = MediaType.APPLICATION_JSON_VALUE)
-    public List<FileResponse> listMine(
-            @RequestHeader(name = "X-User-Id", required = false) String userId,
-            @Valid ListQuery query
+    @GetMapping(path = "/files", produces = MediaType.APPLICATION_JSON_VALUE)
+    public List<FileResponse> listMy(
+            @RequestHeader("X-User-Id") String ownerId,
+            @RequestParam(value = "tag", required = false) String tag,
+            @RequestParam(value = "sortBy", required = false) SortBy sortBy,
+            @RequestParam(value = "sortDir", required = false) SortDir sortDir,
+            @RequestParam(value = "page", required = false) Integer page,
+            @RequestParam(value = "size", required = false) Integer size
     ) {
-        String ownerId = requireUserId(userId);
-        return service.listMine(ownerId, query).stream().map(FileResponse::from).toList();
+        SortBy sb = (sortBy != null) ? sortBy : SortBy.UPLOAD_DATE;
+        SortDir sd = (sortDir != null) ? sortDir : SortDir.DESC;
+        int p = (page != null && page >= 0) ? page : 0;
+        int s = (size != null && size > 0) ? Math.min(size, pagination.maxSize()) : pagination.defaultSize();
+
+        return service.listByOwner(ownerId, new ListQuery(tag, sb, sd, p, s))
+                .stream()
+                .map(FileResponse::from)
+                .toList();
     }
 
-    @GetMapping(value = "/files/public", produces = MediaType.APPLICATION_JSON_VALUE)
-    public List<FileResponse> listPublic(@Valid ListQuery query) {
-        return service.listPublic(query).stream().map(FileResponse::from).toList();
+    @GetMapping(path = "/files/public", produces = MediaType.APPLICATION_JSON_VALUE)
+    public List<FileResponse> listPublic(
+            @RequestParam(value = "tag", required = false) String tag,
+            @RequestParam(value = "sortBy", required = false) SortBy sortBy,
+            @RequestParam(value = "sortDir", required = false) SortDir sortDir,
+            @RequestParam(value = "page", required = false) Integer page,
+            @RequestParam(value = "size", required = false) Integer size
+    ) {
+        SortBy sb = (sortBy != null) ? sortBy : SortBy.UPLOAD_DATE;
+        SortDir sd = (sortDir != null) ? sortDir : SortDir.DESC;
+        int p = (page != null && page >= 0) ? page : 0;
+        int s = (size != null && size > 0) ? Math.min(size, pagination.maxSize()) : pagination.defaultSize();
+
+        return service.listPublic(new ListQuery(tag, sb, sd, p, s))
+                .stream()
+                .map(FileResponse::from)
+                .toList();
     }
 
-    @PatchMapping(value = "/files/{id}/name", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @PatchMapping(path = "/files/{id}/name", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public FileResponse rename(
-            @RequestHeader(name = "X-User-Id", required = false) String userId,
+            @RequestHeader("X-User-Id") String ownerId,
             @PathVariable("id") String id,
             @RequestBody @Valid RenameRequest req
     ) {
-        String ownerId = requireUserId(userId);
-        return FileResponse.from(service.rename(ownerId, id, req.newFilename()));
+        return FileResponse.from(service.rename(ownerId, id, req));
     }
 
-    @DeleteMapping("/files/{id}")
-    public ResponseEntity<Void> delete(
-            @RequestHeader(name = "X-User-Id", required = false) String userId,
+    @DeleteMapping(path = "/files/{id}")
+    @ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
+    public void delete(
+            @RequestHeader("X-User-Id") String ownerId,
             @PathVariable("id") String id
     ) {
-        String ownerId = requireUserId(userId);
         service.delete(ownerId, id);
-        return ResponseEntity.noContent().build();
     }
 }

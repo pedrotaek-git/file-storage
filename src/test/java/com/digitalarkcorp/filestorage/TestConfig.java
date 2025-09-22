@@ -9,10 +9,8 @@ import com.digitalarkcorp.filestorage.testdouble.InMemoryMetadataRepository;
 import com.digitalarkcorp.filestorage.testdouble.InMemoryStoragePort;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Profile;
 
 @TestConfiguration
-@Profile("test")
 public class TestConfig {
 
     @Bean
@@ -26,13 +24,14 @@ public class TestConfig {
     }
 
     @Bean
-    public PaginationProperties paginationProperties() {
-        // your record: (defaultSize, maxSize)
-        return new PaginationProperties(20, 100);
+    public FileService fileService(MetadataRepository repo, StoragePort storage) {
+        // Updated constructor: only (repo, storage)
+        return new DefaultFileService(repo, storage);
     }
 
     @Bean
-    public FileService fileService(MetadataRepository repo, StoragePort storage, PaginationProperties paging) {
-        return new DefaultFileService(repo, storage, paging);
+    public PaginationProperties paginationProperties() {
+        // record PaginationProperties(Integer defaultSize, Integer maxSize)
+        return new PaginationProperties(20, 100);
     }
 }

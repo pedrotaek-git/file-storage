@@ -5,7 +5,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.io.InputStream;
 
@@ -18,14 +17,16 @@ public class DownloadController {
         this.service = service;
     }
 
-    @GetMapping("/d/{linkId}")
-    public ResponseEntity<StreamingResponseBody> download(@PathVariable("linkId") String linkId) {
-        InputStream in = service.downloadByLinkId(linkId);
-        StreamingResponseBody body = out -> in.transferTo(out);
-
-        return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                .header(HttpHeaders.CACHE_CONTROL, "no-store")
-                .body(body);
+    @GetMapping(path = "/d/{linkId}")
+    public ResponseEntity<byte[]> downloadByLink(@PathVariable("linkId") String linkId) {
+        try (InputStream in = service.downloadByLink(linkId)) {
+            byte[] bytes = in.readAllBytes();
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment")
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .body(bytes);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to download", e);
+        }
     }
 }

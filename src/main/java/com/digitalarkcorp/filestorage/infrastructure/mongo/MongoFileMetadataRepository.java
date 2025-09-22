@@ -15,7 +15,6 @@ import org.springframework.data.mongodb.core.query.Query;
 
 import java.util.List;
 import java.util.Locale;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -33,16 +32,9 @@ public class MongoFileMetadataRepository implements MetadataRepository {
     public FileMetadata save(FileMetadata m) {
         FileMetadataDocument d = toDoc(m);
         if (d.getTags() != null) {
-            List<String> norm = d.getTags().stream()
-                    .filter(Objects::nonNull)
-                    .map(String::trim)
-                    .filter(s -> !s.isBlank())
-                    .map(s -> s.toLowerCase(Locale.ROOT))
-                    .distinct()
-                    .toList();
-            d.setTagsNorm(norm);
-        } else {
-            d.setTagsNorm(null);
+            d.setTagsNorm(d.getTags().stream()
+                    .map(s -> s == null ? null : s.toLowerCase(Locale.ROOT))
+                    .toList());
         }
         FileMetadataDocument saved = template.save(d);
         return toDomain(saved);
@@ -101,22 +93,15 @@ public class MongoFileMetadataRepository implements MetadataRepository {
     }
 
     private void applySortAndPage(Query q, SortBy sortBy, SortDir sortDir, int page, int size) {
-        // defaults seguros
-        SortBy effectiveSortBy = (sortBy == null) ? SortBy.UPLOAD_DATE : sortBy;
         Sort.Direction dir = (sortDir == SortDir.DESC) ? Sort.Direction.DESC : Sort.Direction.ASC;
-
-        String field = switch (effectiveSortBy) {
+        String field = switch (sortBy) {
             case FILENAME     -> FILENAME;
             case UPLOAD_DATE  -> CREATED_AT;
             case TAG          -> TAGS_NORM;
             case CONTENT_TYPE -> CONTENT_TYPE;
             case FILE_SIZE    -> SIZE;
         };
-
-        int p = Math.max(0, page);
-        int s = Math.max(1, size);
-
-        q.with(PageRequest.of(p, s, Sort.by(dir, field)));
+        q.with(PageRequest.of(page, size, Sort.by(dir, field)));
     }
 
     private FileMetadataDocument toDoc(FileMetadata m) {
@@ -128,12 +113,12 @@ public class MongoFileMetadataRepository implements MetadataRepository {
         d.setTags(m.tags());
         d.setSize(m.size());
         d.setContentType(m.contentType());
-        d.setObjectKey(m.objectKey());
+        d.setContentHash(m.contentHash());
         d.setLinkId(m.linkId());
         d.setStatus(m.status());
         d.setCreatedAt(m.createdAt());
         d.setUpdatedAt(m.updatedAt());
-        d.setContentHash(m.contentHash());
+        // Note: no objectKey field — we use linkId as storage key.
         return d;
     }
 
@@ -146,12 +131,11 @@ public class MongoFileMetadataRepository implements MetadataRepository {
                 d.getTags(),
                 d.getSize(),
                 d.getContentType(),
-                d.getObjectKey(),
+                d.getContentHash(),
                 d.getLinkId(),
                 d.getStatus(),
                 d.getCreatedAt(),
-                d.getUpdatedAt(),
-                d.getContentHash()
+                d.getUpdatedAt()
         );
     }
 }
