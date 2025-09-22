@@ -12,8 +12,8 @@ import java.util.List;
 
 @Document("files")
 @CompoundIndexes({
-        @CompoundIndex(name = "ux_owner_filename", def = "{'ownerId': 1, 'filename': 1}", unique = true),
-        @CompoundIndex(name = "ux_owner_contentHash", def = "{'ownerId': 1, 'contentHash': 1}", unique = true)
+        @CompoundIndex(name = "uniq_owner_filename", def = "{'ownerId': 1, 'filename': 1}", unique = true),
+        @CompoundIndex(name = "uniq_owner_contentHash", def = "{'ownerId': 1, 'contentHash': 1}", unique = true, sparse = true)
 })
 public class FileMetadataDocument {
 

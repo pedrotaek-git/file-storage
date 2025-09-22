@@ -101,15 +101,22 @@ public class MongoFileMetadataRepository implements MetadataRepository {
     }
 
     private void applySortAndPage(Query q, SortBy sortBy, SortDir sortDir, int page, int size) {
+        // defaults seguros
+        SortBy effectiveSortBy = (sortBy == null) ? SortBy.UPLOAD_DATE : sortBy;
         Sort.Direction dir = (sortDir == SortDir.DESC) ? Sort.Direction.DESC : Sort.Direction.ASC;
-        String field = switch (sortBy) {
+
+        String field = switch (effectiveSortBy) {
             case FILENAME     -> FILENAME;
             case UPLOAD_DATE  -> CREATED_AT;
             case TAG          -> TAGS_NORM;
             case CONTENT_TYPE -> CONTENT_TYPE;
             case FILE_SIZE    -> SIZE;
         };
-        q.with(PageRequest.of(page, size, Sort.by(dir, field)));
+
+        int p = Math.max(0, page);
+        int s = Math.max(1, size);
+
+        q.with(PageRequest.of(p, s, Sort.by(dir, field)));
     }
 
     private FileMetadataDocument toDoc(FileMetadata m) {

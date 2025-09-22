@@ -1,19 +1,16 @@
-server:
-  port: ${APP_PORT:8080}
-
-app:
-  paging:
-    defaultSize: 20
-    maxSize: 100
-  storage:
-    endpoint: http://localhost:9000
-    accessKey: minioadmin
-    secretKey: minioadmin
-    bucket: files
-    region: us-east-1
-    secure: false
 spring:
   data:
     mongodb:
       uri: mongodb://localhost:27017/filestorage
-      auto-index-creation: true
+  mongodb:
+    auto-index-creation: true
+
+storage:
+  endpoint: http://localhost:9000
+  accessKey: minioadmin
+  secretKey: minioadmin
+  bucket: files
+  secure: false
+
+server:
+  port: 8080

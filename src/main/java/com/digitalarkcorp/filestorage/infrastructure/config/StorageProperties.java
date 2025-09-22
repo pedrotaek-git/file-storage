@@ -2,16 +2,11 @@ package com.digitalarkcorp.filestorage.infrastructure.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-@ConfigurationProperties(prefix = "app.storage")
+@ConfigurationProperties(prefix = "storage")
 public record StorageProperties(
-        String endpoint,
-        String accessKey,
-        String secretKey,
-        String bucket,
-        String region,
-        Boolean secure
-) {
-    public StorageProperties {
-        if (secure == null) secure = Boolean.FALSE;
-    }
-}
+        String endpoint,     // e.g. http://localhost:9000
+        String accessKey,    // e.g. minioadmin
+        String secretKey,    // e.g. minioadmin
+        String bucket,       // e.g. files
+        boolean secure       // true/false
+) { }
