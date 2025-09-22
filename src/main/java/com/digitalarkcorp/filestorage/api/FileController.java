@@ -1,16 +1,11 @@
 package com.digitalarkcorp.filestorage.api;
 
-import com.digitalarkcorp.filestorage.api.dto.FileResponse;
-import com.digitalarkcorp.filestorage.api.dto.ListQuery;
-import com.digitalarkcorp.filestorage.api.dto.SortBy;
-import com.digitalarkcorp.filestorage.api.dto.SortDir;
-import com.digitalarkcorp.filestorage.api.dto.UploadRequest;
+import com.digitalarkcorp.filestorage.api.dto.*;
 import com.digitalarkcorp.filestorage.application.FileService;
 import com.digitalarkcorp.filestorage.domain.FileMetadata;
 import com.digitalarkcorp.filestorage.domain.Visibility;
 import jakarta.validation.Valid;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -89,6 +84,31 @@ public class FileController {
         ListQuery q = new ListQuery(tag, sortBy, sortDir, page, size);
         List<FileMetadata> list = service.listPublic(q);
         return ResponseEntity.ok(list.stream().map(this::toResponse).toList());
+    }
+
+    @PatchMapping(path = "/{id}/name", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<FileResponse> rename(
+            @RequestHeader("X-User-Id") String ownerId,
+            @PathVariable("id") String id,
+            @RequestBody @Valid RenameRequest body
+    ) {
+        if (!StringUtils.hasText(ownerId)) {
+            return ResponseEntity.badRequest().build();
+        }
+        FileMetadata updated = service.rename(ownerId, id, body.newFilename());
+        return ResponseEntity.ok(toResponse(updated));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(
+            @RequestHeader("X-User-Id") String ownerId,
+            @PathVariable("id") String id
+    ) {
+        if (!StringUtils.hasText(ownerId)) {
+            return ResponseEntity.badRequest().build();
+        }
+        service.delete(ownerId, id);
+        return ResponseEntity.noContent().build();
     }
 
     private FileResponse toResponse(FileMetadata m) {

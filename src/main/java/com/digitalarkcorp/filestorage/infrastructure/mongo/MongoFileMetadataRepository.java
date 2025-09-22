@@ -61,6 +61,13 @@ public class MongoFileMetadataRepository implements MetadataRepository {
     }
 
     @Override
+    public Optional<FileMetadata> findByLinkId(String linkId) {
+        Query q = new Query(Criteria.where(LINK_ID).is(linkId));
+        FileMetadataDocument d = template.findOne(q, FileMetadataDocument.class);
+        return Optional.ofNullable(d).map(this::toDomain);
+    }
+
+    @Override
     public void deleteById(String id) {
         template.remove(new Query(Criteria.where(ID).is(id)), FileMetadataDocument.class);
     }

@@ -4,8 +4,9 @@ import com.digitalarkcorp.filestorage.api.dto.ListQuery;
 import com.digitalarkcorp.filestorage.api.dto.SortBy;
 import com.digitalarkcorp.filestorage.api.dto.SortDir;
 import com.digitalarkcorp.filestorage.api.errors.ConflictException;
+import com.digitalarkcorp.filestorage.api.errors.ForbiddenException;
+import com.digitalarkcorp.filestorage.api.errors.NotFoundException;
 import com.digitalarkcorp.filestorage.domain.FileMetadata;
-import com.digitalarkcorp.filestorage.domain.FileStatus;
 import com.digitalarkcorp.filestorage.domain.Visibility;
 import com.digitalarkcorp.filestorage.domain.ports.MetadataRepository;
 import com.digitalarkcorp.filestorage.domain.ports.StoragePort;
@@ -50,7 +51,6 @@ public class DefaultFileService implements FileService {
 
         final Instant now = Instant.now();
 
-        // Reserve filename via PENDING; unique index enforces (ownerId, filename)
         FileMetadata pending = FileMetadata.pending(ownerId, filename, visibility, tags, now);
         FileMetadata savedPending;
         try {
@@ -59,9 +59,8 @@ public class DefaultFileService implements FileService {
             throw new ConflictException("Filename already exists for this owner");
         }
 
-        final String objectKey = ownerId + "/" + savedPending.id();
+        final String objectKey = objectKey(ownerId, savedPending.id());
 
-        // Stream content and compute SHA-256 on the fly
         final String uploadId = storagePort.initiate(objectKey);
         long totalBytes = 0L;
         final MessageDigest sha256 = newDigest();
@@ -82,7 +81,7 @@ public class DefaultFileService implements FileService {
             throw rethrown;
         } catch (Exception e) {
             metadataRepository.deleteById(savedPending.id());
-            throw new RuntimeException("storage write failed", e);
+            throw new RuntimeException("Storage write failed", e);
         }
 
         final String contentHash = HexFormat.of().formatHex(sha256.digest());
@@ -90,14 +89,12 @@ public class DefaultFileService implements FileService {
                 ? providedContentType
                 : MimeTypeUtils.APPLICATION_OCTET_STREAM_VALUE;
 
-        // Content dedup per owner: pre-check
         if (metadataRepository.findByOwnerAndContentHash(ownerId, contentHash).isPresent()) {
             storagePort.delete(objectKey);
             metadataRepository.deleteById(savedPending.id());
             throw new ConflictException("A file with the same content already exists for this owner");
         }
 
-        // Mark READY and guard race on final save
         final String linkId = UUID.randomUUID().toString();
         FileMetadata ready = savedPending.ready(totalBytes, contentType, contentHash, linkId, Instant.now());
         try {
@@ -111,17 +108,50 @@ public class DefaultFileService implements FileService {
 
     @Override
     public FileMetadata rename(String ownerId, String id, String newFilename) {
-        throw new UnsupportedOperationException("rename: to be implemented");
+        FileMetadata existing = metadataRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("File not found"));
+        if (!existing.ownerId().equals(ownerId)) {
+            throw new ForbiddenException("Not the owner");
+        }
+        if (existing.filename().equals(newFilename)) {
+            return existing;
+        }
+        if (metadataRepository.findByOwnerAndFilename(ownerId, newFilename).isPresent()) {
+            throw new ConflictException("Filename already exists for this owner");
+        }
+        FileMetadata updated = new FileMetadata(
+                existing.id(),
+                existing.ownerId(),
+                newFilename,
+                existing.visibility(),
+                existing.tags(),
+                existing.size(),
+                existing.contentType(),
+                existing.contentHash(),
+                existing.linkId(),
+                existing.status(),
+                existing.createdAt(),
+                Instant.now()
+        );
+        return metadataRepository.save(updated);
     }
 
     @Override
     public void delete(String ownerId, String id) {
-        throw new UnsupportedOperationException("delete: to be implemented");
+        FileMetadata existing = metadataRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("File not found"));
+        if (!existing.ownerId().equals(ownerId)) {
+            throw new ForbiddenException("Not the owner");
+        }
+        String objectKey = objectKey(ownerId, id);
+        storagePort.delete(objectKey);
+        metadataRepository.deleteById(id);
     }
 
     @Override
     public FileMetadata findById(String id) {
-        throw new UnsupportedOperationException("findById: to be implemented");
+        return metadataRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("File not found"));
     }
 
     @Override
@@ -138,7 +168,14 @@ public class DefaultFileService implements FileService {
 
     @Override
     public InputStream downloadByLinkId(String linkId) {
-        throw new UnsupportedOperationException("downloadByLinkId: to be implemented");
+        FileMetadata m = metadataRepository.findByLinkId(linkId)
+                .orElseThrow(() -> new NotFoundException("Link not found"));
+        String objectKey = objectKey(m.ownerId(), m.id());
+        return storagePort.get(objectKey);
+    }
+
+    private String objectKey(String ownerId, String id) {
+        return ownerId + "/" + id;
     }
 
     private NormalizedQuery normalize(ListQuery query) {
@@ -164,9 +201,9 @@ public class DefaultFileService implements FileService {
             int size
     ) {}
 
-    private MessageDigest newDigest() {
+    private java.security.MessageDigest newDigest() {
         try {
-            return MessageDigest.getInstance("SHA-256");
+            return java.security.MessageDigest.getInstance("SHA-256");
         } catch (Exception e) {
             throw new IllegalStateException("SHA-256 not available", e);
         }

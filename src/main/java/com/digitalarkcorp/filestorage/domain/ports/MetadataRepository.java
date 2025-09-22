@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.Optional;
 
 public interface MetadataRepository {
-
     FileMetadata save(FileMetadata m);
 
     Optional<FileMetadata> findById(String id);
@@ -16,6 +15,8 @@ public interface MetadataRepository {
     Optional<FileMetadata> findByOwnerAndFilename(String ownerId, String filename);
 
     Optional<FileMetadata> findByOwnerAndContentHash(String ownerId, String contentHash);
+
+    Optional<FileMetadata> findByLinkId(String linkId);
 
     void deleteById(String id);
 
