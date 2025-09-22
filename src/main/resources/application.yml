@@ -16,3 +16,6 @@ app:
     secure: ${S3_SECURE:false}
   limits:
     maxTags: 5
+  pagination:
+    defaultSize: 20
+    maxSize: 100
