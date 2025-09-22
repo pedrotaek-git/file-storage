@@ -1,4 +1,6 @@
 package com.digitalarkcorp.filestorage.domain;
 
-public class Visibility {
+public enum Visibility {
+    PUBLIC,
+    PRIVATE
 }
