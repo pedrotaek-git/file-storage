@@ -38,7 +38,7 @@ public class FileMetadataDocument {
     private List<String> tags;
 
     @Indexed
-    private List<String> tagsNorm;
+    private List<String> tagsNorm; // lowercased copy of tags for case-insensitive filtering
 
     private long size;
     private String contentType;
@@ -56,4 +56,22 @@ public class FileMetadataDocument {
 
     @Indexed
     private Instant updatedAt;
+
+    /** Centralized field names for queries (DRY and refactor-safe). */
+    public static final class Fields {
+        public static final String ID = "_id";
+        public static final String OWNER_ID = "ownerId";
+        public static final String FILENAME = "filename";
+        public static final String VISIBILITY = "visibility";
+        public static final String TAGS = "tags";
+        public static final String TAGS_NORM = "tagsNorm";
+        public static final String SIZE = "size";
+        public static final String CONTENT_TYPE = "contentType";
+        public static final String CONTENT_HASH = "contentHash";
+        public static final String LINK_ID = "linkId";
+        public static final String STATUS = "status";
+        public static final String CREATED_AT = "createdAt";
+        public static final String UPDATED_AT = "updatedAt";
+        private Fields() {}
+    }
 }
