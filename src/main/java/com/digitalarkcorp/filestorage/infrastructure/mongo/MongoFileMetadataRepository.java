@@ -15,6 +15,7 @@ import org.springframework.data.mongodb.core.query.Query;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -32,9 +33,16 @@ public class MongoFileMetadataRepository implements MetadataRepository {
     public FileMetadata save(FileMetadata m) {
         FileMetadataDocument d = toDoc(m);
         if (d.getTags() != null) {
-            d.setTagsNorm(d.getTags().stream()
-                    .map(s -> s == null ? null : s.toLowerCase(Locale.ROOT))
-                    .toList());
+            List<String> norm = d.getTags().stream()
+                    .filter(Objects::nonNull)
+                    .map(String::trim)
+                    .filter(s -> !s.isBlank())
+                    .map(s -> s.toLowerCase(Locale.ROOT))
+                    .distinct()
+                    .toList();
+            d.setTagsNorm(norm);
+        } else {
+            d.setTagsNorm(null);
         }
         FileMetadataDocument saved = template.save(d);
         return toDomain(saved);
@@ -113,11 +121,12 @@ public class MongoFileMetadataRepository implements MetadataRepository {
         d.setTags(m.tags());
         d.setSize(m.size());
         d.setContentType(m.contentType());
-        d.setContentHash(m.contentHash());
+        d.setObjectKey(m.objectKey());
         d.setLinkId(m.linkId());
         d.setStatus(m.status());
         d.setCreatedAt(m.createdAt());
         d.setUpdatedAt(m.updatedAt());
+        d.setContentHash(m.contentHash());
         return d;
     }
 
@@ -130,11 +139,12 @@ public class MongoFileMetadataRepository implements MetadataRepository {
                 d.getTags(),
                 d.getSize(),
                 d.getContentType(),
-                d.getContentHash(),
+                d.getObjectKey(),
                 d.getLinkId(),
                 d.getStatus(),
                 d.getCreatedAt(),
-                d.getUpdatedAt()
+                d.getUpdatedAt(),
+                d.getContentHash()
         );
     }
 }

@@ -16,3 +16,4 @@ spring:
   data:
     mongodb:
       uri: mongodb://localhost:27017/filestorage
+      auto-index-creation: true

@@ -8,24 +8,18 @@ import java.io.InputStream;
 import java.util.List;
 
 public interface FileService {
+    FileMetadata upload(String ownerId, String filename, Visibility visibility, List<String> tags,
+                        String contentType, InputStream data, long size);
 
-    FileMetadata upload(String ownerId,
-                        String filename,
-                        Visibility visibility,
-                        List<String> tags,
-                        String providedContentType,
-                        InputStream data,
-                        long contentLength);
+    List<FileMetadata> listPublic(ListQuery query);
+
+    List<FileMetadata> listMine(String ownerId, ListQuery query);
 
     FileMetadata rename(String ownerId, String id, String newFilename);
 
     void delete(String ownerId, String id);
 
-    FileMetadata findById(String id);
-
-    List<FileMetadata> listPublic(ListQuery query);
-
-    List<FileMetadata> listMy(String ownerId, ListQuery query);
-
     InputStream downloadByLinkId(String linkId);
+
+    FileMetadata findById(String id);
 }

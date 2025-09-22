@@ -1,20 +1,22 @@
 package com.digitalarkcorp.filestorage.api;
 
 import com.digitalarkcorp.filestorage.api.dto.*;
+import com.digitalarkcorp.filestorage.api.errors.BadRequestException;
 import com.digitalarkcorp.filestorage.application.FileService;
 import com.digitalarkcorp.filestorage.domain.FileMetadata;
 import com.digitalarkcorp.filestorage.domain.Visibility;
 import jakarta.validation.Valid;
-import org.springframework.http.*;
-import org.springframework.util.StringUtils;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.util.MimeTypeUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.InputStream;
+import java.io.IOException;
 import java.util.List;
 
 @RestController
-@RequestMapping("/files")
+@RequestMapping
 public class FileController {
 
     private final FileService service;
@@ -23,107 +25,72 @@ public class FileController {
         this.service = service;
     }
 
-    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<FileResponse> upload(
-            @RequestHeader("X-User-Id") String ownerId,
-            @RequestPart("metadata") @Valid UploadRequest metadata,
+    private static String requireUserId(String header) {
+        if (header == null || header.isBlank()) {
+            throw new BadRequestException("Missing X-User-Id header");
+        }
+        return header;
+    }
+
+    @PostMapping(value = "/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public FileResponse upload(
+            @RequestHeader(name = "X-User-Id", required = false) String userId,
+            @RequestPart("metadata") @Valid UploadRequest meta,
             @RequestPart("file") MultipartFile file
-    ) throws Exception {
+    ) throws IOException {
 
-        if (!StringUtils.hasText(ownerId)) {
-            return ResponseEntity.badRequest().build();
-        }
+        String ownerId = requireUserId(userId);
 
-        final String filename = metadata.filename();
-        final Visibility visibility = metadata.visibility();
-        final var tags = metadata.tags();
-        final String providedContentType = (metadata.contentType() != null && !metadata.contentType().isBlank())
-                ? metadata.contentType()
-                : file.getContentType();
+        String contentType = (file.getContentType() != null && !file.getContentType().isBlank())
+                ? file.getContentType()
+                : MimeTypeUtils.APPLICATION_OCTET_STREAM_VALUE;
 
-        try (InputStream in = file.getInputStream()) {
-            FileMetadata saved = service.upload(
-                    ownerId,
-                    filename,
-                    visibility,
-                    tags,
-                    providedContentType,
-                    in,
-                    file.getSize()
-            );
+        // use the enum directly (no valueOf)
+        Visibility visibility = meta.visibility();
 
-            return ResponseEntity.ok(toResponse(saved));
-        }
+        FileMetadata saved = service.upload(
+                ownerId,
+                meta.filename(),
+                visibility,
+                meta.tags(),
+                contentType,
+                file.getInputStream(),
+                file.getSize()
+        );
+        return FileResponse.from(saved);
     }
 
-    @GetMapping
-    public ResponseEntity<List<FileResponse>> listMine(
-            @RequestHeader("X-User-Id") String ownerId,
-            @RequestParam(value = "tag", required = false) String tag,
-            @RequestParam(value = "page", required = false) Integer page,
-            @RequestParam(value = "size", required = false) Integer size,
-            @RequestParam(value = "sortBy", required = false) SortBy sortBy,
-            @RequestParam(value = "sortDir", required = false) SortDir sortDir
+    @GetMapping(value = "/files", produces = MediaType.APPLICATION_JSON_VALUE)
+    public List<FileResponse> listMine(
+            @RequestHeader(name = "X-User-Id", required = false) String userId,
+            @Valid ListQuery query
     ) {
-        if (!StringUtils.hasText(ownerId)) {
-            return ResponseEntity.badRequest().build();
-        }
-        ListQuery q = new ListQuery(tag, sortBy, sortDir, page, size);
-        List<FileMetadata> list = service.listMy(ownerId, q);
-        return ResponseEntity.ok(list.stream().map(this::toResponse).toList());
+        String ownerId = requireUserId(userId);
+        return service.listMine(ownerId, query).stream().map(FileResponse::from).toList();
     }
 
-    @GetMapping("/public")
-    public ResponseEntity<List<FileResponse>> listPublic(
-            @RequestParam(value = "tag", required = false) String tag,
-            @RequestParam(value = "page", required = false) Integer page,
-            @RequestParam(value = "size", required = false) Integer size,
-            @RequestParam(value = "sortBy", required = false) SortBy sortBy,
-            @RequestParam(value = "sortDir", required = false) SortDir sortDir
-    ) {
-        ListQuery q = new ListQuery(tag, sortBy, sortDir, page, size);
-        List<FileMetadata> list = service.listPublic(q);
-        return ResponseEntity.ok(list.stream().map(this::toResponse).toList());
+    @GetMapping(value = "/files/public", produces = MediaType.APPLICATION_JSON_VALUE)
+    public List<FileResponse> listPublic(@Valid ListQuery query) {
+        return service.listPublic(query).stream().map(FileResponse::from).toList();
     }
 
-    @PatchMapping(path = "/{id}/name", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<FileResponse> rename(
-            @RequestHeader("X-User-Id") String ownerId,
+    @PatchMapping(value = "/files/{id}/name", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public FileResponse rename(
+            @RequestHeader(name = "X-User-Id", required = false) String userId,
             @PathVariable("id") String id,
-            @RequestBody @Valid RenameRequest body
+            @RequestBody @Valid RenameRequest req
     ) {
-        if (!StringUtils.hasText(ownerId)) {
-            return ResponseEntity.badRequest().build();
-        }
-        FileMetadata updated = service.rename(ownerId, id, body.newFilename());
-        return ResponseEntity.ok(toResponse(updated));
+        String ownerId = requireUserId(userId);
+        return FileResponse.from(service.rename(ownerId, id, req.newFilename()));
     }
 
-    @DeleteMapping("/{id}")
+    @DeleteMapping("/files/{id}")
     public ResponseEntity<Void> delete(
-            @RequestHeader("X-User-Id") String ownerId,
+            @RequestHeader(name = "X-User-Id", required = false) String userId,
             @PathVariable("id") String id
     ) {
-        if (!StringUtils.hasText(ownerId)) {
-            return ResponseEntity.badRequest().build();
-        }
+        String ownerId = requireUserId(userId);
         service.delete(ownerId, id);
         return ResponseEntity.noContent().build();
-    }
-
-    private FileResponse toResponse(FileMetadata m) {
-        return new FileResponse(
-                m.id(),
-                m.ownerId(),
-                m.filename(),
-                m.visibility(),
-                m.tags(),
-                m.size(),
-                m.contentType(),
-                m.linkId(),
-                m.status(),
-                m.createdAt(),
-                m.updatedAt()
-        );
     }
 }
