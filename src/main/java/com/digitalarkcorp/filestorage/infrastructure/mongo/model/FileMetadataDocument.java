@@ -38,7 +38,7 @@ public class FileMetadataDocument {
     private List<String> tags;
 
     @Indexed
-    private List<String> tagsNorm; // lowercase p/ filtro case-insensitive
+    private List<String> tagsNorm;
 
     private long size;
     private String contentType;
