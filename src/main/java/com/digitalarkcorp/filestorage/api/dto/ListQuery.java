@@ -9,4 +9,4 @@ public record ListQuery(
         SortDir sortDir,
         @Min(0) Integer page,
         @Min(1) Integer size
-) {}
+) { }

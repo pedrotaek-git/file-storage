@@ -1,6 +1,9 @@
 package com.digitalarkcorp.filestorage.api;
 
 import com.digitalarkcorp.filestorage.api.dto.FileResponse;
+import com.digitalarkcorp.filestorage.api.dto.ListQuery;
+import com.digitalarkcorp.filestorage.api.dto.SortBy;
+import com.digitalarkcorp.filestorage.api.dto.SortDir;
 import com.digitalarkcorp.filestorage.api.dto.UploadRequest;
 import com.digitalarkcorp.filestorage.application.FileService;
 import com.digitalarkcorp.filestorage.domain.FileMetadata;
@@ -13,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
+import java.util.List;
 
 @RestController
 @RequestMapping("/files")
@@ -53,20 +57,53 @@ public class FileController {
                     file.getSize()
             );
 
-            FileResponse resp = new FileResponse(
-                    saved.id(),
-                    saved.ownerId(),
-                    saved.filename(),
-                    saved.visibility(),
-                    saved.tags(),
-                    saved.size(),
-                    saved.contentType(),
-                    saved.linkId(),
-                    saved.status(),
-                    saved.createdAt(),
-                    saved.updatedAt()
-            );
-            return ResponseEntity.ok(resp);
+            return ResponseEntity.ok(toResponse(saved));
         }
+    }
+
+    @GetMapping
+    public ResponseEntity<List<FileResponse>> listMine(
+            @RequestHeader("X-User-Id") String ownerId,
+            @RequestParam(value = "tag", required = false) String tag,
+            @RequestParam(value = "page", required = false) Integer page,
+            @RequestParam(value = "size", required = false) Integer size,
+            @RequestParam(value = "sortBy", required = false) SortBy sortBy,
+            @RequestParam(value = "sortDir", required = false) SortDir sortDir
+    ) {
+        if (!StringUtils.hasText(ownerId)) {
+            return ResponseEntity.badRequest().build();
+        }
+        ListQuery q = new ListQuery(tag, sortBy, sortDir, page, size);
+        List<FileMetadata> list = service.listMy(ownerId, q);
+        return ResponseEntity.ok(list.stream().map(this::toResponse).toList());
+    }
+
+    @GetMapping("/public")
+    public ResponseEntity<List<FileResponse>> listPublic(
+            @RequestParam(value = "tag", required = false) String tag,
+            @RequestParam(value = "page", required = false) Integer page,
+            @RequestParam(value = "size", required = false) Integer size,
+            @RequestParam(value = "sortBy", required = false) SortBy sortBy,
+            @RequestParam(value = "sortDir", required = false) SortDir sortDir
+    ) {
+        ListQuery q = new ListQuery(tag, sortBy, sortDir, page, size);
+        List<FileMetadata> list = service.listPublic(q);
+        return ResponseEntity.ok(list.stream().map(this::toResponse).toList());
+    }
+
+    private FileResponse toResponse(FileMetadata m) {
+        return new FileResponse(
+                m.id(),
+                m.ownerId(),
+                m.filename(),
+                m.visibility(),
+                m.tags(),
+                m.size(),
+                m.contentType(),
+                m.linkId(),
+                m.status(),
+                m.createdAt(),
+                m.updatedAt()
+        );
     }
 }
