@@ -1,26 +1,26 @@
 package com.digitalarkcorp.filestorage.domain.ports;
 
-import com.digitalarkcorp.filestorage.api.dto.SortBy;
-import com.digitalarkcorp.filestorage.api.dto.SortDir;
+import com.digitalarkcorp.filestorage.api.dto.ListQuery;
 import com.digitalarkcorp.filestorage.domain.FileMetadata;
 
+import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 
 public interface MetadataRepository {
+    boolean existsByOwnerAndContentHash(String ownerId, String contentHash);
+    boolean existsByOwnerAndFilename(String ownerId, String filename);
+
     FileMetadata save(FileMetadata m);
 
-    Optional<FileMetadata> findById(String id);
+    FileMetadata findById(String id);
 
-    Optional<FileMetadata> findByOwnerAndFilename(String ownerId, String filename);
+    FileMetadata findByLinkId(String linkId);
 
-    Optional<FileMetadata> findByOwnerAndContentHash(String ownerId, String contentHash);
+    List<FileMetadata> listByOwner(String ownerId, ListQuery query);
 
-    Optional<FileMetadata> findByLinkId(String linkId);
+    List<FileMetadata> listPublic(ListQuery query);
 
-    void deleteById(String id);
+    void rename(String id, String newFilename, Instant updatedAt);
 
-    List<FileMetadata> listPublic(String tag, SortBy sortBy, SortDir sortDir, int page, int size);
-
-    List<FileMetadata> listByOwner(String ownerId, String tag, SortBy sortBy, SortDir sortDir, int page, int size);
+    boolean deleteByIdAndOwner(String id, String ownerId);
 }

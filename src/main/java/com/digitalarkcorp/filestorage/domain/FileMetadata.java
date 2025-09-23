@@ -1,8 +1,5 @@
 package com.digitalarkcorp.filestorage.domain;
 
-import com.digitalarkcorp.filestorage.domain.FileStatus;
-import com.digitalarkcorp.filestorage.domain.Visibility;
-
 import java.time.Instant;
 import java.util.List;
 

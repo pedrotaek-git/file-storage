@@ -1,14 +1,15 @@
 package com.digitalarkcorp.filestorage.api;
 
 import com.digitalarkcorp.filestorage.application.FileService;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import com.digitalarkcorp.filestorage.domain.ports.StoragePort;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.InputStream;
+import java.io.OutputStream;
 
 @RestController
+@RequestMapping("/d")
 public class DownloadController {
 
     private final FileService service;
@@ -17,16 +18,18 @@ public class DownloadController {
         this.service = service;
     }
 
-    @GetMapping(path = "/d/{linkId}")
-    public ResponseEntity<byte[]> downloadByLink(@PathVariable("linkId") String linkId) {
-        try (InputStream in = service.downloadByLink(linkId)) {
-            byte[] bytes = in.readAllBytes();
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment")
-                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                    .body(bytes);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to download", e);
+    @GetMapping("/{linkId}")
+    public void download(@PathVariable String linkId, HttpServletResponse resp) throws Exception {
+        StoragePort.Resource res = service.downloadByLink(linkId);
+        if (res == null || res.stream() == null) {
+            resp.setStatus(404);
+            return;
+        }
+        if (res.contentType() != null) resp.setContentType(res.contentType());
+        if (res.size() > 0) resp.setContentLengthLong(res.size());
+        try (InputStream in = res.stream(); OutputStream out = resp.getOutputStream()) {
+            in.transferTo(out);
+            out.flush();
         }
     }
 }

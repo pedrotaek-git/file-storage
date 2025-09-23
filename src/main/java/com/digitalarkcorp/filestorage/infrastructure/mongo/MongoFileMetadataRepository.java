@@ -1,149 +1,125 @@
 package com.digitalarkcorp.filestorage.infrastructure.mongo;
 
-import com.digitalarkcorp.filestorage.api.dto.SortBy;
-import com.digitalarkcorp.filestorage.api.dto.SortDir;
-import com.digitalarkcorp.filestorage.api.errors.ConflictException;
+import com.digitalarkcorp.filestorage.api.dto.ListQuery;
 import com.digitalarkcorp.filestorage.domain.FileMetadata;
-import com.digitalarkcorp.filestorage.domain.FileStatus;
 import com.digitalarkcorp.filestorage.domain.Visibility;
 import com.digitalarkcorp.filestorage.domain.ports.MetadataRepository;
 import com.digitalarkcorp.filestorage.infrastructure.mongo.model.FileMetadataDocument;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 
+import java.time.Instant;
 import java.util.List;
-import java.util.Locale;
-import java.util.Optional;
+import java.util.Objects;
 
 public class MongoFileMetadataRepository implements MetadataRepository {
 
-    private final MongoTemplate template;
+    private final MongoTemplate mongo;
 
-    public MongoFileMetadataRepository(MongoTemplate template) {
-        this.template = template;
+    public MongoFileMetadataRepository(MongoTemplate mongo) {
+        this.mongo = mongo;
+    }
+
+    @Override
+    public boolean existsByOwnerAndContentHash(String ownerId, String contentHash) {
+        Query q = new Query();
+        q.addCriteria(Criteria.where("ownerId").is(ownerId));
+        q.addCriteria(Criteria.where("contentHash").is(contentHash));
+        return mongo.exists(q, FileMetadataDocument.class);
+    }
+
+    @Override
+    public boolean existsByOwnerAndFilename(String ownerId, String filename) {
+        Query q = new Query();
+        q.addCriteria(Criteria.where("ownerId").is(ownerId));
+        q.addCriteria(Criteria.where("filename").is(filename));
+        return mongo.exists(q, FileMetadataDocument.class);
     }
 
     @Override
     public FileMetadata save(FileMetadata m) {
+        FileMetadataDocument doc = FileMetadataDocument.fromDomain(m);
         try {
-            FileMetadataDocument d = toDoc(m);
-            // normalize tags into tagsNorm (lowercase) for filtering/sorting
-            if (d.getTags() != null) {
-                d.setTagsNorm(d.getTags().stream()
-                        .map(s -> s == null ? null : s.toLowerCase(Locale.ROOT))
-                        .toList());
-            }
-            FileMetadataDocument saved = template.save(d);
-            return toDomain(saved);
-        } catch (DuplicateKeyException dke) {
-            // your ConflictException only accepts (String)
-            throw new ConflictException("Duplicate key for unique constraint.");
+            FileMetadataDocument saved = mongo.save(doc);
+            return saved.toDomain();
+        } catch (DuplicateKeyException e) {
+            throw e;
         }
     }
 
     @Override
-    public Optional<FileMetadata> findById(String id) {
-        FileMetadataDocument d = template.findById(id, FileMetadataDocument.class);
-        return Optional.ofNullable(d).map(this::toDomain);
+    public FileMetadata findById(String id) {
+        FileMetadataDocument d = mongo.findById(id, FileMetadataDocument.class);
+        return d != null ? d.toDomain() : null;
     }
 
     @Override
-    public Optional<FileMetadata> findByOwnerAndFilename(String ownerId, String filename) {
-        Query q = new Query(Criteria.where("ownerId").is(ownerId).and("filename").is(filename));
-        FileMetadataDocument d = template.findOne(q, FileMetadataDocument.class);
-        return Optional.ofNullable(d).map(this::toDomain);
-    }
-
-    @Override
-    public Optional<FileMetadata> findByOwnerAndContentHash(String ownerId, String contentHash) {
-        Query q = new Query(Criteria.where("ownerId").is(ownerId).and("contentHash").is(contentHash));
-        FileMetadataDocument d = template.findOne(q, FileMetadataDocument.class);
-        return Optional.ofNullable(d).map(this::toDomain);
-    }
-
-    @Override
-    public Optional<FileMetadata> findByLinkId(String linkId) {
+    public FileMetadata findByLinkId(String linkId) {
         Query q = new Query(Criteria.where("linkId").is(linkId));
-        FileMetadataDocument d = template.findOne(q, FileMetadataDocument.class);
-        return Optional.ofNullable(d).map(this::toDomain);
+        FileMetadataDocument d = mongo.findOne(q, FileMetadataDocument.class);
+        return d != null ? d.toDomain() : null;
     }
 
     @Override
-    public void deleteById(String id) {
-        template.remove(new Query(Criteria.where("_id").is(id)), FileMetadataDocument.class);
+    public List<FileMetadata> listByOwner(String ownerId, ListQuery query) {
+        Query q = new Query(Criteria.where("ownerId").is(ownerId));
+        applyListFilters(query, q);
+        return mongo.find(q, FileMetadataDocument.class)
+                .stream().map(FileMetadataDocument::toDomain).toList();
     }
 
     @Override
-    public List<FileMetadata> listPublic(String tag, SortBy sortBy, SortDir sortDir, int page, int size) {
-        Criteria c = Criteria.where("visibility").is(Visibility.PUBLIC).and("status").is(FileStatus.READY);
-        if (tag != null) c = c.and("tagsNorm").is(tag.toLowerCase(Locale.ROOT));
-
-        Query q = new Query(c);
-        applySortAndPage(q, sortBy, sortDir, page, size);
-
-        return template.find(q, FileMetadataDocument.class)
-                .stream().map(this::toDomain).toList();
+    public List<FileMetadata> listPublic(ListQuery query) {
+        Query q = new Query(Criteria.where("visibility").is(Visibility.PUBLIC.name()));
+        applyListFilters(query, q);
+        return mongo.find(q, FileMetadataDocument.class)
+                .stream().map(FileMetadataDocument::toDomain).toList();
     }
 
     @Override
-    public List<FileMetadata> listByOwner(String ownerId, String tag, SortBy sortBy, SortDir sortDir, int page, int size) {
-        Criteria c = Criteria.where("ownerId").is(ownerId);
-        if (tag != null) c = c.and("tagsNorm").is(tag.toLowerCase(Locale.ROOT));
-
-        Query q = new Query(c);
-        applySortAndPage(q, sortBy, sortDir, page, size);
-
-        return template.find(q, FileMetadataDocument.class)
-                .stream().map(this::toDomain).toList();
+    public void rename(String id, String newFilename, Instant updatedAt) {
+        FileMetadataDocument d = mongo.findById(id, FileMetadataDocument.class);
+        if (d == null) return;
+        d = d.withFilename(newFilename).withUpdatedAt(updatedAt);
+        mongo.save(d);
     }
 
-    private void applySortAndPage(Query q, SortBy sortBy, SortDir sortDir, int page, int size) {
-        Sort.Direction dir = (sortDir == SortDir.DESC) ? Sort.Direction.DESC : Sort.Direction.ASC;
-        String field = switch (sortBy) {
-            case FILENAME     -> "filename";
-            case UPLOAD_DATE  -> "createdAt";
-            case TAG          -> "tagsNorm";
-            case CONTENT_TYPE -> "contentType";
-            case FILE_SIZE    -> "size";
+    @Override
+    public boolean deleteByIdAndOwner(String id, String ownerId) {
+        Query q = new Query();
+        q.addCriteria(Criteria.where("_id").is(id));
+        q.addCriteria(Criteria.where("ownerId").is(ownerId));
+        var res = mongo.remove(q, FileMetadataDocument.class);
+        return res.getDeletedCount() > 0;
+    }
+
+    private static void applyListFilters(ListQuery query, Query q) {
+        if (query == null) return;
+
+        if (query.tag() != null && !query.tag().isBlank()) {
+            q.addCriteria(Criteria.where("tags").regex(escapeRegex(query.tag()), "i"));
+        }
+        if (query.filenameContains() != null && !query.filenameContains().isBlank()) {
+            q.addCriteria(Criteria.where("filename").regex(escapeRegex(query.filenameContains()), "i"));
+        }
+
+        int page = Math.max(0, query.page());
+        int size = Math.max(1, query.size());
+        q.skip((long) page * size).limit(size);
+
+        String sortField = switch (query.sortBy()) {
+            case FILENAME -> "filename";
+            case CREATED_AT -> "createdAt";
+            case SIZE -> "size";
         };
-        q.with(PageRequest.of(page, size, Sort.by(dir, field)));
+        Sort.Direction dir = query.sortDir() == ListQuery.SortDir.DESC ? Sort.Direction.DESC : Sort.Direction.ASC;
+        q.with(Sort.by(dir, sortField));
     }
 
-    private FileMetadataDocument toDoc(FileMetadata m) {
-        FileMetadataDocument d = new FileMetadataDocument();
-        d.setId(m.id());
-        d.setOwnerId(m.ownerId());
-        d.setFilename(m.filename());
-        d.setVisibility(m.visibility());
-        d.setTags(m.tags());
-        d.setSize(m.size());
-        d.setContentType(m.contentType());
-        d.setContentHash(m.contentHash());
-        d.setLinkId(m.linkId());
-        d.setStatus(m.status());
-        d.setCreatedAt(m.createdAt());
-        d.setUpdatedAt(m.updatedAt());
-        return d;
-    }
-
-    private FileMetadata toDomain(FileMetadataDocument d) {
-        return new FileMetadata(
-                d.getId(),
-                d.getOwnerId(),
-                d.getFilename(),
-                d.getVisibility(),
-                d.getTags(),
-                d.getSize(),
-                d.getContentType(),
-                d.getContentHash(),
-                d.getLinkId(),
-                d.getStatus(),
-                d.getCreatedAt(),
-                d.getUpdatedAt()
-        );
+    private static String escapeRegex(String s) {
+        return Objects.toString(s, "").replaceAll("([\\\\.\\[\\]\\{\\}\\(\\)\\*\\+\\?\\^\\$\\|])", "\\\\$1");
     }
 }
