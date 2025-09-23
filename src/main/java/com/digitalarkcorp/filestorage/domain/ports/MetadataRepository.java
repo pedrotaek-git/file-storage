@@ -23,4 +23,5 @@ public interface MetadataRepository {
     void rename(String id, String newFilename, Instant updatedAt);
 
     boolean deleteByIdAndOwner(String id, String ownerId);
+
 }

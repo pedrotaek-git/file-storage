@@ -25,11 +25,13 @@ public class MongoFileMetadataRepository implements MetadataRepository {
 
     @Override
     public boolean existsByOwnerAndContentHash(String ownerId, String contentHash) {
-        Query q = new Query();
-        q.addCriteria(Criteria.where("ownerId").is(ownerId));
-        q.addCriteria(Criteria.where("contentHash").is(contentHash));
+        var q = new org.springframework.data.mongodb.core.query.Query();
+        q.addCriteria(org.springframework.data.mongodb.core.query.Criteria
+                .where("ownerId").is(ownerId)
+                .and("contentHash").is(contentHash));
         return mongo.exists(q, FileMetadataDocument.class);
     }
+
 
     @Override
     public boolean existsByOwnerAndFilename(String ownerId, String filename) {
@@ -122,4 +124,13 @@ public class MongoFileMetadataRepository implements MetadataRepository {
     private static String escapeRegex(String s) {
         return Objects.toString(s, "").replaceAll("([\\\\.\\[\\]\\{\\}\\(\\)\\*\\+\\?\\^\\$\\|])", "\\\\$1");
     }
+
+    private String mapSortField(com.digitalarkcorp.filestorage.api.dto.ListQuery.SortBy by) {
+        return switch (by) {
+            case FILENAME -> "filename";
+            case CREATED_AT -> "createdAt";
+            case SIZE -> "size";
+        };
+    }
+
 }

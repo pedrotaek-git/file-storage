@@ -1,81 +1,66 @@
 package com.digitalarkcorp.filestorage.infrastructure.mongo;
 
 import com.digitalarkcorp.filestorage.infrastructure.mongo.model.FileMetadataDocument;
-import org.springframework.boot.ApplicationRunner;
+import org.bson.Document;
+import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.MongoDatabaseFactory;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.data.mongodb.core.index.IndexOperations;
-import org.springframework.data.mongodb.core.query.Query;
 
 import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
-
-import static org.springframework.data.mongodb.core.query.Criteria.where;
 
 @Configuration
 public class MongoConfig {
 
-    private static final String COLLECTION = "files";
-    private static final String UX_OWNER_FILENAME = "uniq_owner_filename";
+    public static final String COLLECTION = "files";
 
     @Bean
-    ApplicationRunner ensureMongoIndexes(MongoTemplate mongoTemplate, MongoDatabaseFactory dbFactory) {
+    CommandLineRunner ensureMongoIndexes(MongoTemplate mongoTemplate) {
         return args -> {
-            if (!mongoTemplate.collectionExists(COLLECTION)) {
-                mongoTemplate.createCollection(COLLECTION);
-            }
+            IndexOperations ix = mongoTemplate.indexOps(FileMetadataDocument.class);
 
-            dedupeOwnerFilename(mongoTemplate);
+            // unique (ownerId, filename)
+            ix.ensureIndex(new Index().on("ownerId", org.springframework.data.domain.Sort.Direction.ASC)
+                    .on("filename", org.springframework.data.domain.Sort.Direction.ASC)
+                    .named("uniq_owner_filename").unique());
 
-            IndexOperations idxOps = mongoTemplate.indexOps(COLLECTION);
-            Index ux = new Index()
-                    .on("ownerId", Sort.Direction.ASC)
-                    .on("filename", Sort.Direction.ASC)
-                    .named(UX_OWNER_FILENAME)
-                    .unique();
+            // unique (ownerId, contentHash) -> dedupe por conteúdo para o mesmo owner
+            ix.ensureIndex(new Index().on("ownerId", org.springframework.data.domain.Sort.Direction.ASC)
+                    .on("contentHash", org.springframework.data.domain.Sort.Direction.ASC)
+                    .named("uniq_owner_contenthash").unique());
 
-            try {
-                idxOps.ensureIndex(ux);
-            } catch (DuplicateKeyException e) {
-                dedupeOwnerFilename(mongoTemplate);
-                idxOps.ensureIndex(ux);
-            }
+            // queries
+            ix.ensureIndex(new Index().on("visibility", org.springframework.data.domain.Sort.Direction.ASC).named("ix_visibility"));
+            ix.ensureIndex(new Index().on("tags", org.springframework.data.domain.Sort.Direction.ASC).named("ix_tags"));
+            ix.ensureIndex(new Index().on("filename", org.springframework.data.domain.Sort.Direction.ASC).named("ix_filename"));
+            ix.ensureIndex(new Index().on("contentHash", org.springframework.data.domain.Sort.Direction.ASC).named("ix_content_hash"));
+            ix.ensureIndex(new Index().on("linkId", org.springframework.data.domain.Sort.Direction.ASC).named("ix_link"));
 
-            idxOps.ensureIndex(new Index().on("visibility", Sort.Direction.ASC).named("ix_visibility"));
-            idxOps.ensureIndex(new Index().on("tags", Sort.Direction.ASC).named("ix_tags"));
-            idxOps.ensureIndex(new Index().on("filename", Sort.Direction.ASC).named("ix_filename"));
-            idxOps.ensureIndex(new Index().on("contentHash", Sort.Direction.ASC).named("ix_content_hash"));
-            idxOps.ensureIndex(new Index().on("linkId", Sort.Direction.ASC).named("ix_link"));
+            // optional: cleanup duplicated docs conflicting with the newly-created unique indexes
+            removeDuplicatesForIndex(mongoTemplate, "uniq_owner_filename", "ownerId", "filename");
+            removeDuplicatesForIndex(mongoTemplate, "uniq_owner_contenthash", "ownerId", "contentHash");
         };
     }
 
-    private void dedupeOwnerFilename(MongoTemplate mongoTemplate) {
-        Query q = new Query().with(
-                Sort.by(Sort.Order.asc("ownerId"), Sort.Order.asc("filename"),
-                        Sort.Order.desc("updatedAt"), Sort.Order.desc("createdAt"))
-        );
-        List<FileMetadataDocument> all = mongoTemplate.find(q, FileMetadataDocument.class, COLLECTION);
+    private void removeDuplicatesForIndex(MongoTemplate mongoTemplate, String indexName, String fieldA, String fieldB) {
+        // Find duplicates based on (fieldA, fieldB) and remove older ones, keep the first
+        // Safe no-op if none exist
+        List<Document> all = mongoTemplate.getCollection(COLLECTION)
+                .find().projection(new Document("_id", 1).append(fieldA, 1).append(fieldB, 1))
+                .into(new java.util.ArrayList<>());
 
-        Set<Pair> seen = new HashSet<>();
-        for (FileMetadataDocument d : all) {
-            Pair key = new Pair(d.getOwnerId(), d.getFilename());
-            if (!seen.add(key)) {
-                mongoTemplate.remove(new Query(where("_id").is(d.getId())), COLLECTION);
+        Set<String> seen = new HashSet<>();
+        for (Document d : all) {
+            String key = d.getString(fieldA) + "||" + d.getString(fieldB);
+            if (seen.contains(key)) {
+                mongoTemplate.getCollection(COLLECTION).deleteOne(new Document("_id", d.getObjectId("_id")));
+            } else {
+                seen.add(key);
             }
-        }
-    }
-
-    private record Pair(String ownerId, String filename) {
-        Pair {
-            ownerId = Objects.toString(ownerId, "");
-            filename = Objects.toString(filename, "");
         }
     }
 }
