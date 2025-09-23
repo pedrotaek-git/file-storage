@@ -2,36 +2,35 @@ package com.digitalarkcorp.filestorage.application;
 
 import com.digitalarkcorp.filestorage.api.dto.ListQuery;
 import com.digitalarkcorp.filestorage.api.dto.RenameRequest;
-import com.digitalarkcorp.filestorage.api.errors.BadRequestException;
 import com.digitalarkcorp.filestorage.api.errors.ConflictException;
 import com.digitalarkcorp.filestorage.api.errors.ForbiddenException;
 import com.digitalarkcorp.filestorage.api.errors.NotFoundException;
+import com.digitalarkcorp.filestorage.application.util.FileQueries;
 import com.digitalarkcorp.filestorage.domain.FileMetadata;
 import com.digitalarkcorp.filestorage.domain.FileStatus;
 import com.digitalarkcorp.filestorage.domain.Visibility;
 import com.digitalarkcorp.filestorage.domain.ports.MetadataRepository;
 import com.digitalarkcorp.filestorage.domain.ports.StoragePort;
 
-import java.io.InputStream;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.security.DigestInputStream;
+import java.io.InputStream;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 public class DefaultFileService implements FileService {
 
-    private final MetadataRepository repo;
-    private final StoragePort storage;
+    private final MetadataRepository repository;
+    private final StoragePort storagePort;
 
-    public DefaultFileService(MetadataRepository repo, StoragePort storage) {
-        this.repo = Objects.requireNonNull(repo);
-        this.storage = Objects.requireNonNull(storage);
+    public DefaultFileService(MetadataRepository repository, StoragePort storagePort) {
+        this.repository = Objects.requireNonNull(repository, "repository is required");
+        this.storagePort = Objects.requireNonNull(storagePort, "storagePort is required");
     }
 
     @Override
@@ -40,118 +39,85 @@ public class DefaultFileService implements FileService {
                                Visibility visibility,
                                List<String> tags,
                                String contentType,
-                               InputStream content,
+                               InputStream data,
                                long size) {
-        if (ownerId == null || ownerId.isBlank()) throw new BadRequestException("Missing owner");
-        if (filename == null || filename.isBlank()) throw new BadRequestException("Filename is required");
-        if (visibility == null) throw new BadRequestException("Visibility is required");
-        if (content == null) throw new BadRequestException("File content is required");
-        if (size < 0) throw new BadRequestException("Invalid size");
 
-        // Dup by (ownerId + filename)
-        repo.findByOwnerAndFilename(ownerId, filename).ifPresent(existing -> {
+        if (ownerId == null || ownerId.isBlank()) throw new IllegalArgumentException("ownerId is required");
+        if (filename == null || filename.isBlank()) throw new IllegalArgumentException("filename is required");
+        if (visibility == null) throw new IllegalArgumentException("visibility is required");
+        if (contentType == null || contentType.isBlank()) throw new IllegalArgumentException("contentType is required");
+        if (data == null) throw new IllegalArgumentException("data is required");
+        if (size < 0) throw new IllegalArgumentException("size must be >= 0");
+
+        final String normalizedFilename = filename.trim();
+
+        if (FileQueries.existsByOwnerAndFilename(repository, ownerId, normalizedFilename)) {
             throw new ConflictException("Filename already exists for this owner");
-        });
-
-        Path temp = null;
-        try {
-            // Compute SHA-256 while copying to a temp file
-            MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
-            temp = Files.createTempFile("upload-", ".bin");
-            try (DigestInputStream din = new DigestInputStream(content, sha256)) {
-                Files.copy(din, temp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-            }
-            long effectiveSize = (size > 0) ? size : Files.size(temp);
-            String contentHash = HexFormat.of().formatHex(sha256.digest());
-
-            // Dup by (ownerId + contentHash)
-            repo.findByOwnerAndContentHash(ownerId, contentHash).ifPresent(existing -> {
-                throw new ConflictException("A file with the same content already exists for this owner");
-            });
-
-            String linkId = UUID.randomUUID().toString();
-            String uploadId = storage.initiate(linkId);
-            try (InputStream in = Files.newInputStream(temp)) {
-                storage.uploadPart(uploadId, 1, in, effectiveSize);
-            }
-            storage.complete(uploadId);
-
-            Instant now = Instant.now();
-            FileMetadata model = new FileMetadata(
-                    null,                 // id generated by Mongo
-                    ownerId,
-                    filename,
-                    visibility,
-                    tags,
-                    effectiveSize,
-                    contentType != null && !contentType.isBlank() ? contentType : "application/octet-stream",
-                    contentHash,
-                    linkId,
-                    FileStatus.READY,
-                    now,
-                    now
-            );
-            return repo.save(model);
-        } catch (ConflictException | BadRequestException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to complete upload", e);
-        } finally {
-            if (temp != null) {
-                try {
-                    Files.deleteIfExists(temp);
-                } catch (IOException ignore) {
-                    // best-effort
-                }
-            }
         }
-    }
 
-    @Override
-    public List<FileMetadata> listByOwner(String ownerId, ListQuery query) {
-        if (ownerId == null || ownerId.isBlank()) throw new BadRequestException("Missing owner");
-        return repo.listByOwner(
+        byte[] bytes = readAllBytes(data);
+        String hash = sha256Hex(bytes);
+
+        if (FileQueries.existsByOwnerAndHash(repository, ownerId, hash)) {
+            throw new ConflictException("Duplicate content for this owner");
+        }
+
+        Instant now = Instant.now();
+        String linkId = UUID.randomUUID().toString();
+
+        FileMetadata toSave = new FileMetadata(
+                null,                // id (gerado pelo Mongo)
                 ownerId,
-                query.tag(),
-                query.sortBy(),
-                query.sortDir(),
-                query.page(),
-                query.size()
+                normalizedFilename,
+                visibility,
+                tags,
+                size,
+                contentType,
+                hash,
+                linkId,
+                FileStatus.READY,
+                now,
+                now
         );
+
+        FileMetadata saved = repository.save(toSave);
+
+        String objectKey = saved.id();
+        String uploadId = storagePort.initiate(objectKey);
+        storagePort.uploadPart(uploadId, 1, new ByteArrayInputStream(bytes), bytes.length);
+        storagePort.complete(uploadId);
+
+        return saved;
     }
 
     @Override
-    public List<FileMetadata> listPublic(ListQuery query) {
-        return repo.listPublic(
-                query.tag(),
-                query.sortBy(),
-                query.sortDir(),
-                query.page(),
-                query.size()
-        );
-    }
-
-    @Override
-    public FileMetadata rename(String ownerId, String id, RenameRequest request) {
-        if (ownerId == null || ownerId.isBlank()) throw new BadRequestException("Missing owner");
-        if (id == null || id.isBlank()) throw new BadRequestException("Missing id");
+    public FileMetadata rename(String ownerId, String fileId, RenameRequest request) {
+        if (ownerId == null || ownerId.isBlank()) throw new IllegalArgumentException("ownerId is required");
+        if (fileId == null || fileId.isBlank()) throw new IllegalArgumentException("fileId is required");
         if (request == null || request.newFilename() == null || request.newFilename().isBlank()) {
-            throw new BadRequestException("New filename is required");
+            throw new IllegalArgumentException("newFilename is required");
         }
 
-        FileMetadata current = repo.findById(id).orElseThrow(() -> new NotFoundException("File not found"));
-        if (!ownerId.equals(current.ownerId())) throw new ForbiddenException("Not the owner");
+        FileMetadata current = repository.findById(fileId)
+                .orElseThrow(() -> new NotFoundException("File not found"));
 
-        repo.findByOwnerAndFilename(ownerId, request.newFilename()).ifPresent(other -> {
-            if (!other.id().equals(id)) {
-                throw new ConflictException("Filename already exists for this owner");
-            }
-        });
+        if (!ownerId.equals(current.ownerId())) {
+            throw new ForbiddenException("Not the owner");
+        }
+
+        String newName = request.newFilename().trim();
+        if (newName.equals(current.filename())) {
+            return current;
+        }
+
+        if (FileQueries.existsByOwnerAndFilename(repository, ownerId, newName)) {
+            throw new ConflictException("Filename already exists for this owner");
+        }
 
         FileMetadata updated = new FileMetadata(
                 current.id(),
                 current.ownerId(),
-                request.newFilename(),
+                newName,
                 current.visibility(),
                 current.tags(),
                 current.size(),
@@ -162,25 +128,80 @@ public class DefaultFileService implements FileService {
                 current.createdAt(),
                 Instant.now()
         );
-        return repo.save(updated);
+
+        return repository.save(updated);
+    }
+
+    @Override
+    public void delete(String ownerId, String fileId) {
+        if (ownerId == null || ownerId.isBlank()) throw new IllegalArgumentException("ownerId is required");
+        if (fileId == null || fileId.isBlank()) throw new IllegalArgumentException("fileId is required");
+
+        FileMetadata current = repository.findById(fileId)
+                .orElseThrow(() -> new NotFoundException("File not found"));
+
+        if (!ownerId.equals(current.ownerId())) {
+            throw new ForbiddenException("Not the owner");
+        }
+
+        storagePort.delete(current.id());
+        repository.deleteById(fileId);
     }
 
     @Override
     public InputStream downloadByLink(String linkId) {
-        if (linkId == null || linkId.isBlank()) throw new BadRequestException("Missing linkId");
-        FileMetadata m = repo.findByLinkId(linkId).orElseThrow(() -> new NotFoundException("File not found"));
-        return storage.get(m.linkId());
+        if (linkId == null || linkId.isBlank()) throw new IllegalArgumentException("linkId is required");
+
+        FileMetadata m = repository.findByLinkId(linkId)
+                .orElseThrow(() -> new NotFoundException("Link not found"));
+
+        return storagePort.get(m.id());
     }
 
     @Override
-    public void delete(String ownerId, String id) {
-        if (ownerId == null || ownerId.isBlank()) throw new BadRequestException("Missing owner");
-        if (id == null || id.isBlank()) throw new BadRequestException("Missing id");
+    public Optional<FileMetadata> findById(String id) {
+        return repository.findById(id);
+    }
 
-        FileMetadata m = repo.findById(id).orElseThrow(() -> new NotFoundException("File not found"));
-        if (!ownerId.equals(m.ownerId())) throw new ForbiddenException("Not the owner");
+    @Override
+    public List<FileMetadata> listPublic(ListQuery query) {
+        return repository.listPublic(
+                query.tag(),
+                query.sortBy(),
+                query.sortDir(),
+                query.page(),
+                query.size()
+        );
+    }
 
-        storage.delete(m.linkId());
-        repo.deleteById(id);
+    @Override
+    public List<FileMetadata> listByOwner(String ownerId, ListQuery query) {
+        return repository.listByOwner(
+                ownerId,
+                query.tag(),
+                query.sortBy(),
+                query.sortDir(),
+                query.page(),
+                query.size()
+        );
+    }
+
+    // Utils
+    private static byte[] readAllBytes(InputStream in) {
+        try {
+            return in.readAllBytes();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read upload stream", e);
+        }
+    }
+
+    private static String sha256Hex(byte[] data) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(data);
+            return HexFormat.of().formatHex(digest);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to compute SHA-256", e);
+        }
     }
 }

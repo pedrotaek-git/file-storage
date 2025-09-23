@@ -8,9 +8,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 
-@Profile("!test")
 @Configuration
 @EnableConfigurationProperties(StorageProperties.class)
+@Profile("!test")
 public class StorageConfig {
 
     @Bean
@@ -23,7 +23,6 @@ public class StorageConfig {
 
     @Bean
     public StoragePort storagePort(MinioClient client, StorageProperties props) {
-        // S3StorageAdapter tem construtor (MinioClient, StorageProperties)
         return new S3StorageAdapter(client, props);
     }
 }

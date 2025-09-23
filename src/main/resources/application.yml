@@ -2,8 +2,17 @@ spring:
   data:
     mongodb:
       uri: mongodb://localhost:27017/filestorage
-  mongodb:
-    auto-index-creation: true
+      auto-index-creation: true
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+  main:
+    allow-bean-definition-overriding: true
+
+
+server:
+  port: 8080
 
 storage:
   endpoint: http://localhost:9000
@@ -12,5 +21,7 @@ storage:
   bucket: files
   secure: false
 
-server:
-  port: 8080
+app:
+  pagination:
+    default-size: 20
+    max-size: 100

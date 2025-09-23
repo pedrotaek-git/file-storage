@@ -1,14 +1,13 @@
 package com.digitalarkcorp.filestorage.infrastructure.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
+import jakarta.validation.constraints.Min;
+
+@Validated
 @ConfigurationProperties(prefix = "app.pagination")
 public record PaginationProperties(
-        Integer defaultSize,
-        Integer maxSize
-) {
-    public PaginationProperties {
-        if (defaultSize == null || defaultSize < 1) defaultSize = 20;
-        if (maxSize == null || maxSize < 1) maxSize = 100;
-    }
-}
+        @Min(1) Integer defaultSize,
+        @Min(1) Integer maxSize
+) { }

@@ -7,42 +7,29 @@ import com.digitalarkcorp.filestorage.domain.Visibility;
 
 import java.io.InputStream;
 import java.util.List;
+import java.util.Optional;
 
 public interface FileService {
 
-    /**
-     * Stores a file and persists its metadata.
-     */
     FileMetadata upload(String ownerId,
                         String filename,
                         Visibility visibility,
                         List<String> tags,
                         String contentType,
-                        InputStream content,
+                        InputStream data,
                         long size);
 
-    /**
-     * Lists files owned by a specific user using filtering/sorting/pagination.
-     */
-    List<FileMetadata> listByOwner(String ownerId, ListQuery query);
+    FileMetadata rename(String ownerId,
+                        String fileId,
+                        RenameRequest request);
 
-    /**
-     * Lists public files using filtering/sorting/pagination.
-     */
-    List<FileMetadata> listPublic(ListQuery query);
+    void delete(String ownerId, String fileId);
 
-    /**
-     * Renames a file if requester is the owner.
-     */
-    FileMetadata rename(String ownerId, String id, RenameRequest request);
-
-    /**
-     * Downloads a file by its public link identifier.
-     */
     InputStream downloadByLink(String linkId);
 
-    /**
-     * Deletes a file if requester is the owner.
-     */
-    void delete(String ownerId, String id);
+    Optional<FileMetadata> findById(String id);
+
+    List<FileMetadata> listPublic(ListQuery query);
+
+    List<FileMetadata> listByOwner(String ownerId, ListQuery query);
 }
