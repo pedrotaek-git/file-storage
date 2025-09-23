@@ -2,33 +2,30 @@ package com.digitalarkcorp.filestorage.application;
 
 import com.digitalarkcorp.filestorage.api.dto.ListQuery;
 import com.digitalarkcorp.filestorage.api.dto.RenameRequest;
-import com.digitalarkcorp.filestorage.api.errors.ConflictException;
-import com.digitalarkcorp.filestorage.api.errors.ForbiddenException;
-import com.digitalarkcorp.filestorage.api.errors.NotFoundException;
-import com.digitalarkcorp.filestorage.application.util.FileQueries;
 import com.digitalarkcorp.filestorage.domain.FileMetadata;
-import com.digitalarkcorp.filestorage.domain.FileStatus;
 import com.digitalarkcorp.filestorage.domain.Visibility;
 import com.digitalarkcorp.filestorage.domain.ports.MetadataRepository;
 import com.digitalarkcorp.filestorage.domain.ports.StoragePort;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Objects;
+import java.util.Locale;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 public class DefaultFileService implements FileService {
 
-    private final MetadataRepository metadataRepository;
-    private final StoragePort storagePort;
+    private final MetadataRepository repo;
+    private final StoragePort storage;
 
-    public DefaultFileService(MetadataRepository metadataRepository, StoragePort storagePort) {
-        this.metadataRepository = metadataRepository;
-        this.storagePort = storagePort;
+    public DefaultFileService(MetadataRepository repo, StoragePort storage) {
+        this.repo = repo;
+        this.storage = storage;
     }
 
     @Override
@@ -37,114 +34,121 @@ public class DefaultFileService implements FileService {
                                Visibility visibility,
                                List<String> tags,
                                String contentType,
-                               long size,
-                               InputStream contentStream) {
-        Objects.requireNonNull(ownerId);
-        Objects.requireNonNull(filename);
-        Objects.requireNonNull(visibility);
-        Objects.requireNonNull(contentType);
-        Objects.requireNonNull(contentStream);
-
-        byte[] data;
+                               long contentLength,
+                               InputStream data) {
+        byte[] bytes;
         try {
-            data = contentStream.readAllBytes();
-        } catch (Exception e) {
-            throw new RuntimeException("read content", e);
-        }
-        String sha256 = sha256Hex(data);
-        if (metadataRepository.existsByOwnerAndContentHash(ownerId, sha256)) {
-            throw new ConflictException("same content for owner");
-        }
-        if (metadataRepository.existsByOwnerAndFilename(ownerId, filename)) {
-            throw new ConflictException("duplicate filename for owner");
+            bytes = data.readAllBytes();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
 
+        String contentHash = sha256(bytes);
+
+        if (repo.existsByOwnerAndFilename(ownerId, filename)) {
+            throw new RuntimeException("same name for owner");
+        }
+        if (repo.existsByOwnerAndContentHash(ownerId, contentHash)) {
+            throw new RuntimeException("same content for owner");
+        }
+
+        String id = randomId();
+        String linkId = UUID.randomUUID().toString();
         Instant now = Instant.now();
-        FileMetadata toSave = new FileMetadata(
-                null,
+
+        List<String> normTags = normalize(tags);
+
+        FileMetadata meta = new FileMetadata(
+                id,
                 ownerId,
                 filename,
                 visibility,
-                FileQueries.normalizeTags(tags),
-                size,
+                normTags,
+                contentLength,
                 contentType,
-                sha256,
-                UUID.randomUUID().toString(),
-                FileStatus.READY,
+                contentHash,
+                linkId,
+                FileMetadata.FileStatus.READY,
                 now,
                 now
         );
-        FileMetadata saved = metadataRepository.save(toSave);
 
-        String objectKey = "f/" + saved.id();
-        storagePort.put(objectKey, contentType, size, new ByteArrayInputStream(data));
-        return saved;
+        storage.put(id, new ByteArrayInputStream(bytes), contentLength, contentType);
+        repo.save(meta);
+        return meta;
     }
 
     @Override
-    public List<FileMetadata> listByOwner(String ownerId, ListQuery query) {
-        return metadataRepository.listByOwner(ownerId, query);
-    }
-
-    @Override
-    public List<FileMetadata> listPublic(ListQuery query) {
-        return metadataRepository.listPublic(query);
-    }
-
-    @Override
-    public FileMetadata rename(String ownerId, String fileId, RenameRequest req) {
-        Objects.requireNonNull(ownerId);
-        Objects.requireNonNull(fileId);
-        Objects.requireNonNull(req);
-        String newName = req.newFilename();
-        if (newName == null || newName.isBlank()) {
-            throw new IllegalArgumentException("new filename required");
+    public FileMetadata rename(String ownerId, String id, RenameRequest req) {
+        FileMetadata current = repo.findById(id);
+        if (current == null) {
+            throw new RuntimeException("not found");
         }
-
-        FileMetadata current = metadataRepository.findById(fileId);
-        if (current == null) throw new NotFoundException("file not found");
-        if (!ownerId.equals(current.ownerId())) throw new ForbiddenException("not owner");
-        if (metadataRepository.existsByOwnerAndFilename(ownerId, newName)) {
-            throw new ConflictException("duplicate filename for owner");
+        if (!current.ownerId().equals(ownerId)) {
+            throw new RuntimeException("not owner");
         }
-
+        if (repo.existsByOwnerAndFilename(ownerId, req.newFilename())) {
+            throw new RuntimeException("same name for owner");
+        }
         Instant now = Instant.now();
-        metadataRepository.rename(fileId, newName, now);
-        FileMetadata updated = metadataRepository.findById(fileId);
-        if (updated == null) throw new NotFoundException("file not found after rename");
-        return updated;
+        repo.rename(id, req.newFilename(), now);
+        return repo.findById(id);
     }
 
     @Override
-    public void delete(String ownerId, String fileId) {
-        Objects.requireNonNull(ownerId);
-        Objects.requireNonNull(fileId);
+    public void delete(String ownerId, String id) {
+        FileMetadata m = repo.findById(id);
+        if (m == null) {
+            return;
+        }
+        if (!m.ownerId().equals(ownerId)) {
+            return;
+        }
+        boolean deleted = repo.deleteByIdAndOwner(id, ownerId);
+        if (deleted) {
+            storage.delete(id);
+        }
+    }
 
-        FileMetadata current = metadataRepository.findById(fileId);
-        if (current == null) throw new NotFoundException("file not found");
-        if (!ownerId.equals(current.ownerId())) throw new ForbiddenException("not owner");
+    @Override
+    public List<FileMetadata> listByOwner(String ownerId, ListQuery q) {
+        return repo.listByOwner(ownerId, q);
+    }
 
-        String objectKey = "f/" + current.id();
-        storagePort.delete(objectKey);
-        boolean ok = metadataRepository.deleteByIdAndOwner(fileId, ownerId);
-        if (!ok) throw new NotFoundException("file not found on delete");
+    @Override
+    public List<FileMetadata> listPublic(ListQuery q) {
+        return repo.listPublic(q);
     }
 
     @Override
     public StoragePort.Resource downloadByLink(String linkId) {
-        FileMetadata m = metadataRepository.findByLinkId(linkId);
-        if (m == null) return null;
-        String objectKey = "f/" + m.id();
-        return storagePort.get(objectKey);
+        FileMetadata m = repo.findByLinkId(linkId);
+        if (m == null) {
+            throw new RuntimeException("not found");
+        }
+        return storage.get(m.id());
     }
 
-    private static String sha256Hex(byte[] data) {
+    private static String sha256(byte[] bytes) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] dig = md.digest(data);
-            return HexFormat.of().formatHex(dig);
+            return HexFormat.of().formatHex(md.digest(bytes));
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private static List<String> normalize(List<String> tags) {
+        if (tags == null) return null;
+        return tags.stream()
+                .filter(s -> s != null && !s.isBlank())
+                .map(s -> s.trim().toLowerCase(Locale.ROOT))
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    private static String randomId() {
+        return Long.toUnsignedString(UUID.randomUUID().getMostSignificantBits(), 36)
+                + Long.toUnsignedString(UUID.randomUUID().getLeastSignificantBits(), 36);
     }
 }

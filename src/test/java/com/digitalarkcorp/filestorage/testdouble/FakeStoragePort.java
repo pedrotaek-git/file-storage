@@ -8,15 +8,23 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class FakeStoragePort implements StoragePort {
-    private final Map<String, byte[]> data = new ConcurrentHashMap<>();
-    private final Map<String, String> types = new ConcurrentHashMap<>();
+
+    private static final class Obj {
+        final byte[] data;
+        final String contentType;
+        Obj(byte[] data, String contentType) {
+            this.data = data;
+            this.contentType = contentType;
+        }
+    }
+
+    private final Map<String, Obj> store = new ConcurrentHashMap<>();
 
     @Override
-    public void put(String objectKey, String contentType, long size, InputStream content) {
+    public void put(String objectKey, InputStream data, long contentLength, String contentType) {
         try {
-            byte[] bytes = content.readAllBytes();
-            data.put(objectKey, bytes);
-            types.put(objectKey, contentType);
+            byte[] bytes = data.readAllBytes();
+            store.put(objectKey, new Obj(bytes, contentType));
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -24,14 +32,13 @@ public class FakeStoragePort implements StoragePort {
 
     @Override
     public Resource get(String objectKey) {
-        byte[] bytes = data.get(objectKey);
-        if (bytes == null) return null;
-        return new Resource(new ByteArrayInputStream(bytes), bytes.length, types.get(objectKey));
+        Obj o = store.get(objectKey);
+        if (o == null) throw new RuntimeException("not found");
+        return new Resource(new ByteArrayInputStream(o.data), o.data.length, o.contentType);
     }
 
     @Override
     public void delete(String objectKey) {
-        data.remove(objectKey);
-        types.remove(objectKey);
+        store.remove(objectKey);
     }
 }

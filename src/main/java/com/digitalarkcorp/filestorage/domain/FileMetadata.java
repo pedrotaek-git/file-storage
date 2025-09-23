@@ -16,4 +16,6 @@ public record FileMetadata(
         FileStatus status,
         Instant createdAt,
         Instant updatedAt
-) {}
+) {
+    public enum FileStatus { READY }
+}

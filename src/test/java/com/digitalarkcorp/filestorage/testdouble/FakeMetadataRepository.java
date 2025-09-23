@@ -1,54 +1,43 @@
 package com.digitalarkcorp.filestorage.testdouble;
 
 import com.digitalarkcorp.filestorage.api.dto.ListQuery;
-import com.digitalarkcorp.filestorage.api.errors.ConflictException;
 import com.digitalarkcorp.filestorage.domain.FileMetadata;
 import com.digitalarkcorp.filestorage.domain.Visibility;
 import com.digitalarkcorp.filestorage.domain.ports.MetadataRepository;
 
+import java.lang.reflect.Method;
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Stream;
+import java.util.stream.Collectors;
 
 public class FakeMetadataRepository implements MetadataRepository {
+
     private final Map<String, FileMetadata> byId = new ConcurrentHashMap<>();
-    private final Map<String, String> nameKey = new ConcurrentHashMap<>();
-    private final Map<String, String> hashKey = new ConcurrentHashMap<>();
 
     @Override
     public FileMetadata save(FileMetadata m) {
-        String id = m.id() == null ? UUID.randomUUID().toString().replace("-", "") : m.id();
-        Instant now = Instant.now();
-        FileMetadata toSave = new FileMetadata(
-                id, m.ownerId(), m.filename(), m.visibility(), m.tags(), m.size(),
-                m.contentType(), m.contentHash(), m.linkId(), m.status(),
-                m.createdAt() == null ? now : m.createdAt(), now
+        String id = m.id() != null ? m.id() : genId();
+        FileMetadata saved = new FileMetadata(
+                id,
+                m.ownerId(),
+                m.filename(),
+                m.visibility(),
+                m.tags(),
+                m.size(),
+                m.contentType(),
+                m.contentHash(),
+                m.linkId(),
+                m.status(),
+                m.createdAt(),
+                m.updatedAt()
         );
-
-        String nk = m.ownerId() + "|" + m.filename();
-        String hk = m.ownerId() + "|" + m.contentHash();
-
-        String existingNameId = nameKey.get(nk);
-        if (existingNameId != null && !existingNameId.equals(id)) throw new ConflictException("duplicate filename for owner");
-        nameKey.put(nk, id);
-
-        String existingHashId = hashKey.get(hk);
-        if (existingHashId != null && !existingHashId.equals(id)) throw new ConflictException("duplicate content for owner");
-        hashKey.put(hk, id);
-
-        byId.put(id, toSave);
-        return toSave;
-    }
-
-    @Override
-    public boolean existsByOwnerAndFilename(String ownerId, String filename) {
-        return nameKey.containsKey(ownerId + "|" + filename);
-    }
-
-    @Override
-    public boolean existsByOwnerAndContentHash(String ownerId, String contentHash) {
-        return hashKey.containsKey(ownerId + "|" + contentHash);
+        byId.put(id, saved);
+        return saved;
     }
 
     @Override
@@ -58,71 +47,108 @@ public class FakeMetadataRepository implements MetadataRepository {
 
     @Override
     public FileMetadata findByLinkId(String linkId) {
-        return byId.values().stream().filter(m -> Objects.equals(m.linkId(), linkId)).findFirst().orElse(null);
-    }
-
-    @Override
-    public void rename(String id, String newFilename, Instant now) {
-        FileMetadata cur = byId.get(id);
-        if (cur == null) return;
-
-        String nk = cur.ownerId() + "|" + newFilename;
-        String exists = nameKey.get(nk);
-        if (exists != null && !exists.equals(id)) throw new ConflictException("duplicate filename for owner");
-
-        nameKey.remove(cur.ownerId() + "|" + cur.filename());
-        nameKey.put(nk, id);
-
-        FileMetadata updated = new FileMetadata(
-                cur.id(), cur.ownerId(), newFilename, cur.visibility(), cur.tags(),
-                cur.size(), cur.contentType(), cur.contentHash(), cur.linkId(),
-                cur.status(), cur.createdAt(), now
-        );
-        byId.put(id, updated);
+        return byId.values().stream()
+                .filter(f -> linkId != null && linkId.equals(f.linkId()))
+                .findFirst()
+                .orElse(null);
     }
 
     @Override
     public boolean deleteByIdAndOwner(String id, String ownerId) {
-        FileMetadata cur = byId.get(id);
-        if (cur == null || !Objects.equals(cur.ownerId(), ownerId)) return false;
+        FileMetadata existing = byId.get(id);
+        if (existing == null) return false;
+        if (!existing.ownerId().equals(ownerId)) return false;
         byId.remove(id);
-        nameKey.remove(ownerId + "|" + cur.filename());
-        hashKey.remove(ownerId + "|" + cur.contentHash());
         return true;
     }
 
     @Override
+    public boolean existsByOwnerAndContentHash(String ownerId, String contentHash) {
+        return byId.values().stream()
+                .anyMatch(f -> f.ownerId().equals(ownerId) && contentHash.equals(f.contentHash()));
+    }
+
+    @Override
+    public boolean existsByOwnerAndFilename(String ownerId, String filename) {
+        return byId.values().stream()
+                .anyMatch(f -> f.ownerId().equals(ownerId) && f.filename().equals(filename));
+    }
+
+    @Override
+    public void rename(String id, String newFilename, Instant now) {
+        FileMetadata existing = byId.get(id);
+        if (existing == null) return;
+        FileMetadata renamed = new FileMetadata(
+                existing.id(),
+                existing.ownerId(),
+                newFilename,
+                existing.visibility(),
+                existing.tags(),
+                existing.size(),
+                existing.contentType(),
+                existing.contentHash(),
+                existing.linkId(),
+                existing.status(),
+                existing.createdAt(),
+                now != null ? now : existing.updatedAt()
+        );
+        byId.put(id, renamed);
+    }
+
+    @Override
     public List<FileMetadata> listByOwner(String ownerId, ListQuery q) {
-        return filter(byId.values().stream().filter(m -> Objects.equals(m.ownerId(), ownerId)), q);
+        List<FileMetadata> base = byId.values().stream()
+                .filter(f -> f.ownerId().equals(ownerId))
+                .collect(Collectors.toCollection(ArrayList::new));
+        return applyQuery(base, q);
     }
 
     @Override
     public List<FileMetadata> listPublic(ListQuery q) {
-        return filter(byId.values().stream().filter(m -> m.visibility() == Visibility.PUBLIC), q);
+        List<FileMetadata> base = byId.values().stream()
+                .filter(f -> f.visibility() == Visibility.PUBLIC)
+                .collect(Collectors.toCollection(ArrayList::new));
+        return applyQuery(base, q);
     }
 
-    private static List<FileMetadata> filter(Stream<FileMetadata> stream, ListQuery q) {
+    private static List<FileMetadata> applyQuery(List<FileMetadata> src, ListQuery q) {
         String tag = q.tag();
-        String nameLike = q.filenameContains();
-        if (tag != null && !tag.isBlank()) {
-            String t = tag.toLowerCase();
-            stream = stream.filter(m -> m.tags() != null && m.tags().stream().anyMatch(x -> x != null && x.equalsIgnoreCase(t)));
-        }
-        if (nameLike != null && !nameLike.isBlank()) {
-            String n = nameLike.toLowerCase();
-            stream = stream.filter(m -> m.filename() != null && m.filename().toLowerCase().contains(n));
-        }
+        String contains = containsValue(q);
+
+        List<FileMetadata> filtered = src.stream()
+                .filter(f -> tag == null || (f.tags() != null && f.tags().stream().anyMatch(t -> t.equalsIgnoreCase(tag))))
+                .filter(f -> contains == null || f.filename().toLowerCase().contains(contains.toLowerCase()))
+                .collect(Collectors.toCollection(ArrayList::new));
+
         Comparator<FileMetadata> cmp;
         switch (q.sortBy()) {
-            case CREATED_AT -> cmp = Comparator.comparing(FileMetadata::createdAt);
+            case FILENAME -> cmp = Comparator.comparing(FileMetadata::filename, String.CASE_INSENSITIVE_ORDER);
             case SIZE -> cmp = Comparator.comparingLong(FileMetadata::size);
-            default -> cmp = Comparator.comparing(FileMetadata::filename, Comparator.nullsFirst(String::compareTo));
+            case CREATED_AT -> cmp = Comparator.comparing(FileMetadata::createdAt);
+            default -> cmp = Comparator.comparing(FileMetadata::createdAt);
         }
         if (q.sortDir() == ListQuery.SortDir.DESC) cmp = cmp.reversed();
-        var all = stream.sorted(cmp).toList();
+        filtered.sort(cmp);
+
         int from = Math.max(0, q.page() * q.size());
-        int to = Math.min(all.size(), from + q.size());
-        if (from >= to) return List.of();
-        return all.subList(from, to);
+        int to = Math.min(filtered.size(), from + q.size());
+        if (from >= filtered.size()) return List.of();
+        return filtered.subList(from, to);
+    }
+
+    private static String containsValue(ListQuery q) {
+        for (String name : new String[]{"filenameContains", "q", "nameLike"}) {
+            try {
+                Method m = q.getClass().getMethod(name);
+                Object v = m.invoke(q);
+                return v != null ? String.valueOf(v) : null;
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
+    }
+
+    private static String genId() {
+        return UUID.randomUUID().toString().replace("-", "").substring(0, 24);
     }
 }

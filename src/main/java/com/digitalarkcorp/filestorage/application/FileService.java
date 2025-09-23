@@ -16,15 +16,15 @@ public interface FileService {
                         List<String> tags,
                         String contentType,
                         long size,
-                        InputStream contentStream);
+                        InputStream in);
 
     List<FileMetadata> listByOwner(String ownerId, ListQuery query);
 
     List<FileMetadata> listPublic(ListQuery query);
 
-    FileMetadata rename(String ownerId, String fileId, RenameRequest req);
+    FileMetadata rename(String ownerId, String id, RenameRequest req);
 
-    void delete(String ownerId, String fileId);
+    void delete(String ownerId, String id);
 
     StoragePort.Resource downloadByLink(String linkId);
 }

@@ -7,21 +7,21 @@ import java.time.Instant;
 import java.util.List;
 
 public interface MetadataRepository {
-    boolean existsByOwnerAndContentHash(String ownerId, String contentHash);
-    boolean existsByOwnerAndFilename(String ownerId, String filename);
-
     FileMetadata save(FileMetadata m);
 
-    FileMetadata findById(String id);
+    boolean existsByOwnerAndFilename(String ownerId, String filename);
 
-    FileMetadata findByLinkId(String linkId);
+    boolean existsByOwnerAndContentHash(String ownerId, String contentHash);
 
     List<FileMetadata> listByOwner(String ownerId, ListQuery query);
 
     List<FileMetadata> listPublic(ListQuery query);
 
-    void rename(String id, String newFilename, Instant updatedAt);
+    FileMetadata findById(String id);
+
+    FileMetadata findByLinkId(String linkId);
+
+    void rename(String id, String newFilename, Instant now);
 
     boolean deleteByIdAndOwner(String id, String ownerId);
-
 }

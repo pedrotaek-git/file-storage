@@ -1,44 +1,76 @@
 package com.digitalarkcorp.filestorage.infrastructure.s3;
 
 import com.digitalarkcorp.filestorage.domain.ports.StoragePort;
+import com.digitalarkcorp.filestorage.infrastructure.config.StorageProperties;
+import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
+import io.minio.PutObjectArgs;
+import io.minio.RemoveObjectArgs;
+import io.minio.StatObjectArgs;
+import io.minio.StatObjectResponse;
 
-import java.io.ByteArrayInputStream;
 import java.io.InputStream;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class S3StorageAdapter implements StoragePort {
 
-    private record Meta(long size, String contentType, byte[] data) {}
-    private final Map<String, Meta> store = new ConcurrentHashMap<>();
+    private final MinioClient client;
+    private final StorageProperties props;
 
-    public S3StorageAdapter() {}
-
-    // Keeps compatibility with StorageConfig that wires MinioClient and StorageProperties.
-    public S3StorageAdapter(MinioClient client, com.digitalarkcorp.filestorage.infrastructure.config.StorageProperties props) {
-        // No-op in the in-memory adapter.
+    public S3StorageAdapter(MinioClient client, StorageProperties props) {
+        this.client = client;
+        this.props = props;
     }
 
     @Override
-    public void put(String objectKey, String contentType, long size, InputStream content) {
+    public void put(String objectKey, InputStream data, long contentLength, String contentType) {
         try {
-            byte[] data = content.readAllBytes();
-            store.put(objectKey, new Meta(size, contentType, data));
+            PutObjectArgs.Builder b = PutObjectArgs.builder()
+                    .bucket(props.bucket())
+                    .object(objectKey)
+                    .stream(data, contentLength, -1);
+            if (contentType != null && !contentType.isBlank()) {
+                b.contentType(contentType);
+            }
+            client.putObject(b.build());
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            throw new RuntimeException("s3 put failed", e);
         }
     }
 
     @Override
     public Resource get(String objectKey) {
-        Meta m = store.get(objectKey);
-        if (m == null) return null;
-        return new Resource(new ByteArrayInputStream(m.data), m.size, m.contentType);
+        try {
+            StatObjectResponse stat = client.statObject(
+                    StatObjectArgs.builder()
+                            .bucket(props.bucket())
+                            .object(objectKey)
+                            .build()
+            );
+            InputStream in = client.getObject(
+                    GetObjectArgs.builder()
+                            .bucket(props.bucket())
+                            .object(objectKey)
+                            .build()
+            );
+            String ct = stat.contentType();
+            long len = stat.size();
+            return new Resource(in, len, ct);
+        } catch (Exception e) {
+            throw new RuntimeException("s3 get failed", e);
+        }
     }
 
     @Override
     public void delete(String objectKey) {
-        store.remove(objectKey);
+        try {
+            client.removeObject(
+                    RemoveObjectArgs.builder()
+                            .bucket(props.bucket())
+                            .object(objectKey)
+                            .build()
+            );
+        } catch (Exception e) {
+            throw new RuntimeException("s3 delete failed", e);
+        }
     }
 }
