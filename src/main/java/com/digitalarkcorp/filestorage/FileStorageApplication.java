@@ -5,11 +5,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 @SpringBootApplication
-@ConfigurationPropertiesScan
+@ConfigurationPropertiesScan("com.digitalarkcorp.filestorage.infrastructure.config")
 public class FileStorageApplication {
-
 	public static void main(String[] args) {
 		SpringApplication.run(FileStorageApplication.class, args);
 	}
-
 }

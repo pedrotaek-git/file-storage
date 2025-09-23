@@ -1,56 +1,73 @@
 package com.digitalarkcorp.filestorage.application.util;
 
-import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
-import java.security.DigestInputStream;
 import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.util.HexFormat;
-import java.util.List;
-import java.util.Objects;
-import java.util.TreeSet;
+import java.util.Locale;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 public final class FileQueries {
+
+    private static final Pattern ILLEGAL = Pattern.compile("[\\r\\n\\t]");
+
     private FileQueries() {}
 
-    public static List<String> normalizeTags(List<String> tags) {
-        if (tags == null || tags.isEmpty()) return null;
-        TreeSet<String> s = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        for (String t : tags) {
-            if (t != null) {
-                String v = t.trim();
-                if (!v.isBlank()) s.add(v);
-            }
+    public static String normalizeFilename(String name) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("filename required");
         }
-        return s.isEmpty() ? null : List.copyOf(s);
+        String trimmed = name.trim();
+        String cleaned = ILLEGAL.matcher(trimmed).replaceAll("_");
+        return cleaned;
+    }
+
+    public static String sha256(byte[] data) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(md.digest(data));
+        } catch (Exception e) {
+            throw new RuntimeException("sha256 error", e);
+        }
+    }
+
+    public static String sha256(InputStream in) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] buf = new byte[8192];
+            int r;
+            while ((r = in.read(buf)) != -1) {
+                md.update(buf, 0, r);
+            }
+            return HexFormat.of().formatHex(md.digest());
+        } catch (Exception e) {
+            throw new RuntimeException("sha256 error", e);
+        }
     }
 
     public static String escapeRegex(String s) {
-        StringBuilder b = new StringBuilder();
-        for (char c : s.toCharArray()) {
-            if ("\\.^$|?*+[]{}()".indexOf(c) >= 0) b.append('\\');
-            b.append(c);
-        }
-        return b.toString();
+        if (s == null) return null;
+        return Pattern.quote(s);
     }
 
-    public static String newId() {
-        return HexFormat.of().formatHex(UUID.randomUUID().toString().getBytes()).substring(0, 24);
+    public static String randomLinkId() {
+        return UUID.randomUUID().toString();
     }
 
-    public static String sha256Hex(BufferedInputStream bin) {
+    public static byte[] readAll(InputStream in) {
         try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            bin.mark(Integer.MAX_VALUE);
-            try (DigestInputStream dis = new DigestInputStream(bin, md)) {
-                byte[] buf = new byte[8192];
-                while (dis.read(buf) != -1) { }
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int r;
+            while ((r = in.read(buf)) != -1) {
+                bos.write(buf, 0, r);
             }
-            byte[] digest = md.digest();
-            bin.reset();
-            return HexFormat.of().formatHex(digest);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+            return bos.toByteArray();
+        } catch (IOException e) {
+            throw new RuntimeException("readAll error", e);
         }
     }
 }

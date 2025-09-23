@@ -16,7 +16,7 @@ public record FileResponse(
         String contentType,
         String contentHash,
         String linkId,
-        String status,
+        FileMetadata.FileStatus status,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -31,7 +31,7 @@ public record FileResponse(
                 m.contentType(),
                 m.contentHash(),
                 m.linkId(),
-                m.status().name(),
+                m.status(),
                 m.createdAt(),
                 m.updatedAt()
         );

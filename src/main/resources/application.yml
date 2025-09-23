@@ -7,18 +7,16 @@ spring:
     multipart:
       max-file-size: 50MB
       max-request-size: 50MB
-  main:
-    allow-bean-definition-overriding: true
-
 
 server:
   port: 8080
 
 storage:
+  provider: s3
   endpoint: http://localhost:9000
-  accessKey: minioadmin
-  secretKey: minioadmin
-  bucket: files
+  accessKey: minio
+  secretKey: minio123
+  bucket: filestorage
   secure: false
 
 app:

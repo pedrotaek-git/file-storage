@@ -13,6 +13,9 @@ import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -27,7 +30,8 @@ class DefaultFileServiceUnitTest {
     void setup() {
         repo = new FakeMetadataRepository();
         storage = new FakeStoragePort();
-        service = new DefaultFileService(repo, storage);
+        Clock clock = Clock.fixed(Instant.parse("2025-01-01T00:00:00Z"), ZoneOffset.UTC);
+        service = new DefaultFileService(repo, storage, clock);
     }
 
     @Test

@@ -10,21 +10,22 @@ import java.io.InputStream;
 import java.util.List;
 
 public interface FileService {
+
     FileMetadata upload(String ownerId,
                         String filename,
                         Visibility visibility,
                         List<String> tags,
                         String contentType,
-                        long size,
-                        InputStream in);
+                        long contentLength,
+                        InputStream data);
 
     List<FileMetadata> listByOwner(String ownerId, ListQuery query);
 
     List<FileMetadata> listPublic(ListQuery query);
 
-    FileMetadata rename(String ownerId, String id, RenameRequest req);
+    FileMetadata rename(String userId, String id, RenameRequest req);
 
-    void delete(String ownerId, String id);
+    boolean delete(String userId, String id);
 
-    StoragePort.Resource downloadByLink(String linkId);
+    StoragePort.Resource getForDownload(String linkId);
 }

@@ -4,21 +4,23 @@ import com.digitalarkcorp.filestorage.application.DefaultFileService;
 import com.digitalarkcorp.filestorage.application.FileService;
 import com.digitalarkcorp.filestorage.domain.ports.MetadataRepository;
 import com.digitalarkcorp.filestorage.domain.ports.StoragePort;
-import com.digitalarkcorp.filestorage.infrastructure.mongo.MongoFileMetadataRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.mongodb.core.MongoTemplate;
+
+import java.time.Clock;
 
 @Configuration
 public class AppConfig {
 
     @Bean
-    public MetadataRepository metadataRepository(MongoTemplate mongoTemplate) {
-        return new MongoFileMetadataRepository(mongoTemplate);
+    public Clock clock() {
+        return Clock.systemUTC();
     }
 
     @Bean
-    public FileService fileService(MetadataRepository metadataRepository, StoragePort storagePort) {
-        return new DefaultFileService(metadataRepository, storagePort);
+    public FileService fileService(MetadataRepository repository,
+                                   StoragePort storage,
+                                   Clock clock) {
+        return new DefaultFileService(repository, storage, clock);
     }
 }
