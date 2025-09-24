@@ -19,11 +19,11 @@ services:
     container_name: filestorage-minio
     command: server /data --console-address :9001
     ports:
-      - "9000:9000"  # S3 API
-      - "9001:9001"  # Console UI
+      - "9000:9000"
+      - "9001:9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio123
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
       interval: 10s

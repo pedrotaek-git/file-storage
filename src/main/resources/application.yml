@@ -12,8 +12,7 @@ server:
   port: 8080
 
 storage:
-  provider: local
-  localRoot: /tmp/filestorage
+  provider: s3
   endpoint: http://localhost:9000
   accessKey: minio
   secretKey: minio123

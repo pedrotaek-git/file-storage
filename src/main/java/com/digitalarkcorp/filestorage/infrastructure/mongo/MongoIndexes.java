@@ -1,13 +1,11 @@
 package com.digitalarkcorp.filestorage.infrastructure.mongo;
 
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.ApplicationRunner;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.index.Index;
-import org.springframework.data.mongodb.core.index.IndexOperations;
+import com.mongodb.client.model.Indexes;
+import com.mongodb.client.model.IndexOptions;
 
 @Configuration
 @RequiredArgsConstructor
@@ -15,28 +13,24 @@ public class MongoIndexes {
 
     private final MongoTemplate template;
 
-    @Bean
-    ApplicationRunner ensureIndexes() {
-        return args -> {
-            IndexOperations ops = template.indexOps("files");
+    @PostConstruct
+    public void ensure() {
+        var col = template.getCollection("files");
 
-            ops.ensureIndex(new Index()
-                    .on("ownerId", Sort.Direction.ASC)
-                    .on("filename", Sort.Direction.ASC)
-                    .unique()
-                    .named("uniq_owner_filename"));
-
-            ops.ensureIndex(new Index()
-                    .on("ownerId", Sort.Direction.ASC)
-                    .on("contentHash", Sort.Direction.ASC)
-                    .unique()
-                    .named("uniq_owner_contenthash"));
-
-            ops.ensureIndex(new Index().on("visibility", Sort.Direction.ASC).named("ix_visibility"));
-            ops.ensureIndex(new Index().on("tags", Sort.Direction.ASC).named("ix_tags"));
-            ops.ensureIndex(new Index().on("filename", Sort.Direction.ASC).named("ix_filename"));
-            ops.ensureIndex(new Index().on("contentHash", Sort.Direction.ASC).named("ix_content_hash"));
-            ops.ensureIndex(new Index().on("linkId", Sort.Direction.ASC).named("ix_link"));
-        };
+        col.createIndex(
+                Indexes.compoundIndex(Indexes.ascending("ownerId"), Indexes.ascending("filename")),
+                new IndexOptions().name("uniq_owner_filename").unique(true)
+        );
+        col.createIndex(
+                Indexes.compoundIndex(Indexes.ascending("ownerId"), Indexes.ascending("contentHash")),
+                new IndexOptions().name("uniq_owner_contenthash").unique(true)
+        );
+        col.createIndex(Indexes.ascending("visibility"), new IndexOptions().name("ix_visibility"));
+        col.createIndex(Indexes.ascending("tags"),       new IndexOptions().name("ix_tags"));
+        col.createIndex(Indexes.ascending("filename"),   new IndexOptions().name("ix_filename"));
+        col.createIndex(Indexes.ascending("contentHash"),new IndexOptions().name("ix_content_hash"));
+        col.createIndex(Indexes.ascending("linkId"),     new IndexOptions().name("ix_link"));
+        col.createIndex(Indexes.ascending("createdAt"),  new IndexOptions().name("ix_created_at"));
+        col.createIndex(Indexes.ascending("updatedAt"),  new IndexOptions().name("ix_updated_at"));
     }
 }
