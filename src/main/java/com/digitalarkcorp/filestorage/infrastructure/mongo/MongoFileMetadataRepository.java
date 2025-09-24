@@ -140,39 +140,29 @@ public class MongoFileMetadataRepository implements MetadataRepository {
 
     @Override
     public List<FileMetadata> listPublic(ListQuery query) {
-        Criteria base = Criteria.where("visibility").is("PUBLIC");
-        Criteria c = base;
+        Criteria c = where("visibility").is("PUBLIC");
 
-        if (query.q() != null && !query.q().isBlank()) {
-            String esc = Pattern.quote(query.q());
+        if (hasText(query.tag())) {
+            Pattern p = Pattern.compile("^" + Pattern.quote(query.tag()) + "$", Pattern.CASE_INSENSITIVE);
             c = new Criteria().andOperator(
-                    base,
-                    Criteria.where("filename").regex(esc, "i")
-            );
-        }
-
-        if (query.tag() != null && !query.tag().isBlank()) {
-            String esc = Pattern.quote(query.tag());
-            c = new Criteria().andOperator(
-                    c,
-                    Criteria.where("tags").regex("^" + esc + "$", "i")
+                    where("visibility").is("PUBLIC"),
+                    where("tags").elemMatch(where("$regex").is(p))
             );
         }
 
         Query q = new Query(c);
 
-        String field = switch (query.sortBy() != null ? query.sortBy() : ListQuery.SortBy.CREATED_AT) {
-            case FILENAME     -> "filename";
-            case CREATED_AT   -> "createdAt";
-            case UPDATED_AT   -> "updatedAt";
+        // sort
+        String field = switch (query.sortBy()) {
+            case FILENAME -> "filename";
+            case CREATED_AT -> "createdAt";
+            case UPDATED_AT -> "updatedAt";
             case CONTENT_TYPE -> "contentType";
-            case SIZE         -> "size";
-            case TAG          -> "tags";
+            default -> "createdAt";
         };
-        Sort.Direction dir = (query.sortDir() == ListQuery.SortDir.ASC) ? Sort.Direction.ASC : Sort.Direction.DESC;
-        q.with(Sort.by(dir, field));
+        q.with(Sort.by(query.sortDir() == ListQuery.SortDir.ASC ? Sort.Direction.ASC : Sort.Direction.DESC, field));
 
-        // paginação segura
+        // page
         int size = Math.min(Math.max(query.size(), 1), 100);
         int page = Math.max(query.page(), 0);
         q.skip((long) page * size).limit(size);
@@ -180,8 +170,6 @@ public class MongoFileMetadataRepository implements MetadataRepository {
         List<FileMetadataDocument> docs = mongo.find(q, FileMetadataDocument.class, COL);
         return docs.stream().map(this::map).toList();
     }
-
-
 
     @Override
     public boolean existsByOwnerAndFilename(String ownerId, String filename) {
@@ -212,7 +200,8 @@ public class MongoFileMetadataRepository implements MetadataRepository {
         }
         if (hasText(query.tag())) {
             Pattern p = Pattern.compile("^" + Pattern.quote(query.tag()) + "$", Pattern.CASE_INSENSITIVE);
-            q.addCriteria(Criteria.where("tags").elemMatch(Criteria.where("$regex").is(p)));
+            // antes: q.addCriteria(where("tags").regex(p));
+            q.addCriteria(where("tags").elemMatch(where("$regex").is(p)));
         }
     }
 

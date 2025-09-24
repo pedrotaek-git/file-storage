@@ -33,7 +33,6 @@ public class DownloadController {
                 ? MediaType.parseMediaType(ct)
                 : MediaType.APPLICATION_OCTET_STREAM);
 
-        // pega o hash via metadado e usa como ETag (opcional, porém útil)
         var meta = service.findByLinkId(linkId);
         if (meta != null && meta.contentHash() != null && !meta.contentHash().isBlank()) {
             headers.setETag("\"" + meta.contentHash() + "\"");
