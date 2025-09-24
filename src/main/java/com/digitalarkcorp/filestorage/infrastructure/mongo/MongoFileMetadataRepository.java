@@ -140,9 +140,42 @@ public class MongoFileMetadataRepository implements MetadataRepository {
 
     @Override
     public List<FileMetadata> listPublic(ListQuery query) {
-        Query q = new Query(Criteria.where("visibility").is("PUBLIC"));
-        applyFilters(q, query);
-        applyPagingAndSorting(q, query);
+        Criteria base = Criteria.where("visibility").is("PUBLIC");
+        Criteria c = base;
+
+        if (query.q() != null && !query.q().isBlank()) {
+            String esc = Pattern.quote(query.q());
+            c = new Criteria().andOperator(
+                    base,
+                    Criteria.where("filename").regex(esc, "i")
+            );
+        }
+
+        if (query.tag() != null && !query.tag().isBlank()) {
+            String esc = Pattern.quote(query.tag());
+            c = new Criteria().andOperator(
+                    c,
+                    Criteria.where("tags").regex("^" + esc + "$", "i")
+            );
+        }
+
+        Query q = new Query(c);
+
+        String field = switch (query.sortBy() != null ? query.sortBy() : ListQuery.SortBy.CREATED_AT) {
+            case FILENAME     -> "filename";
+            case CREATED_AT   -> "createdAt";
+            case UPDATED_AT   -> "updatedAt";
+            case CONTENT_TYPE -> "contentType";
+            case SIZE         -> "size";
+            case TAG          -> "tags";
+        };
+        Sort.Direction dir = (query.sortDir() == ListQuery.SortDir.ASC) ? Sort.Direction.ASC : Sort.Direction.DESC;
+        q.with(Sort.by(dir, field));
+
+        // paginação segura
+        int size = Math.min(Math.max(query.size(), 1), 100);
+        int page = Math.max(query.page(), 0);
+        q.skip((long) page * size).limit(size);
 
         List<FileMetadataDocument> docs = mongo.find(q, FileMetadataDocument.class, COL);
         return docs.stream().map(this::map).toList();

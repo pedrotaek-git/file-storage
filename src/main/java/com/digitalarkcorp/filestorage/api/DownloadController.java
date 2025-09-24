@@ -25,13 +25,23 @@ public class DownloadController {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentDisposition(ContentDisposition.attachment().filename("download.bin").build());
-        String ct = r.contentType();
-        headers.setContentType((ct != null && !ct.isBlank()) ? MediaType.parseMediaType(ct) : MediaType.APPLICATION_OCTET_STREAM);
-        headers.setContentLength(r.contentLength());
         headers.add(HttpHeaders.ACCEPT_RANGES, "bytes");
+        headers.setContentLength(r.contentLength());
+
+        String ct = r.contentType();
+        headers.setContentType((ct != null && !ct.isBlank())
+                ? MediaType.parseMediaType(ct)
+                : MediaType.APPLICATION_OCTET_STREAM);
+
+        // pega o hash via metadado e usa como ETag (opcional, porém útil)
+        var meta = service.findByLinkId(linkId);
+        if (meta != null && meta.contentHash() != null && !meta.contentHash().isBlank()) {
+            headers.setETag("\"" + meta.contentHash() + "\"");
+        }
 
         return ResponseEntity.ok()
                 .headers(headers)
                 .body(new InputStreamResource(r.stream()));
     }
+
 }

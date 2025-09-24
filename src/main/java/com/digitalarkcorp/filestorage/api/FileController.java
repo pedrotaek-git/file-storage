@@ -81,8 +81,8 @@ public class FileController {
 
     @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
     public List<FileResponse> listByOwner(
-            @RequestHeader("X-User-Id") String userId,
-            ListQuery query
+            @RequestHeader("X-User-Id") @NotBlank String userId,
+            @Valid ListQuery query
     ) {
         var q = normalize(query);
         return service.listByOwner(userId, q).stream().map(FileResponse::from).toList();

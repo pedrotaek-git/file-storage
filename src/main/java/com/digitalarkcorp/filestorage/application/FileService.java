@@ -28,4 +28,6 @@ public interface FileService {
     boolean delete(String userId, String id);
 
     StoragePort.Resource getForDownload(String linkId);
+
+    FileMetadata findByLinkId(String linkId);
 }

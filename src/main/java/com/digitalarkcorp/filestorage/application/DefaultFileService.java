@@ -138,4 +138,9 @@ public class DefaultFileService implements FileService {
         if (meta == null) throw new NotFoundException("file not found");
         return storage.get(meta.contentHash());
     }
+
+    @Override
+    public FileMetadata findByLinkId(String linkId) {
+        return repository.findByLinkId(linkId);
+    }
 }
