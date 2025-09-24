@@ -9,6 +9,7 @@ repositories {
 }
 
 dependencies {
+	implementation("org.apache.tika:tika-core:2.9.0")
 	implementation("org.springframework.boot:spring-boot-starter-web")
 	implementation("org.springframework.boot:spring-boot-starter-validation")
 	implementation("org.springframework.boot:spring-boot-starter-data-mongodb") // << ESSENCIAL
@@ -19,7 +20,7 @@ dependencies {
 	// MinIO
 	implementation("io.minio:minio:8.5.10")
 
-	// Lombok (infra somente)
+	// Lombok
 	compileOnly("org.projectlombok:lombok:1.18.34")
 	annotationProcessor("org.projectlombok:lombok:1.18.34")
 	testCompileOnly("org.projectlombok:lombok:1.18.34")

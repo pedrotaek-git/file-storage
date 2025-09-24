@@ -141,8 +141,8 @@ public class MongoFileMetadataRepository implements MetadataRepository {
     @Override
     public List<FileMetadata> listPublic(ListQuery query) {
         Query q = new Query(Criteria.where("visibility").is("PUBLIC"));
-        applyFilters(q, query);          // q/tag (case-insensitive) se vierem
-        applyPagingAndSorting(q, query); // agora null-safe
+        applyFilters(q, query);
+        applyPagingAndSorting(q, query);
 
         List<FileMetadataDocument> docs = mongo.find(q, FileMetadataDocument.class, COL);
         return docs.stream().map(this::map).toList();
@@ -204,6 +204,7 @@ public class MongoFileMetadataRepository implements MetadataRepository {
             case SIZE         -> "size";
             case CONTENT_TYPE -> "contentType";
             case CREATED_AT   -> "createdAt";
+            case TAG          -> "tags";
             default           -> "createdAt";
         };
 

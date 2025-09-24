@@ -10,6 +10,8 @@ import com.digitalarkcorp.filestorage.domain.FileMetadata;
 import com.digitalarkcorp.filestorage.domain.Visibility;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import org.apache.tika.Tika;
+import org.apache.tika.io.TikaInputStream;
 import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -39,16 +41,25 @@ public class FileController {
             @RequestPart("metadata") @Valid UploadMetadata meta,
             @RequestPart("file") MultipartFile file
     ) throws IOException {
-        Visibility visibility = meta.visibility();
-        List<String> tags = meta.tags();
+
+        var visibility = meta.visibility();
+        var tags = meta.tags();
+
+        String contentType = file.getContentType();
+        if (contentType == null || contentType.isBlank()) {
+            try (var tis = TikaInputStream.get(file.getInputStream())) {
+                contentType = new Tika().detect(tis, file.getOriginalFilename());
+            }
+        }
+
         FileMetadata m = service.upload(
                 userId,
                 meta.filename(),
                 visibility,
                 tags,
-                file.getContentType(),
+                contentType,
                 file.getSize(),
-                file.getInputStream()
+                file.getInputStream() // novo stream para o upload real
         );
         return from(m);
     }

@@ -8,7 +8,9 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 
 public record UploadMetadata(
-        @NotBlank @Size(min = 1, max = 255) String filename,
+        @NotBlank String filename,
         @NotNull Visibility visibility,
-        List<String> tags
+        @Size(max = 5, message = "at most 5 tags")
+        List<@NotBlank String> tags
 ) {}
+
