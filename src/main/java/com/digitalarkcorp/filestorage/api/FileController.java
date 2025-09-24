@@ -78,10 +78,10 @@ public class FileController {
     }
 
     private ListQuery normalize(ListQuery in) {
-        ListQuery.SortBy sortBy = in.sortBy() != null ? in.sortBy() : ListQuery.SortBy.CREATED_AT;
-        ListQuery.SortDir sortDir = in.sortDir() != null ? in.sortDir() : ListQuery.SortDir.DESC;
-        int size = in.size() != null && in.size() > 0 ? Math.min(in.size(), pagination.maxSize()) : pagination.defaultSize();
-        int page = in.page() != null && in.page() >= 0 ? in.page() : 0;
+        ListQuery.SortBy sortBy = (in.sortBy() != null) ? in.sortBy() : ListQuery.SortBy.CREATED_AT;
+        ListQuery.SortDir sortDir = (in.sortDir() != null) ? in.sortDir() : ListQuery.SortDir.DESC;
+        int size = in.size() <= 0 ? pagination.defaultSize() : Math.min(in.size(), pagination.maxSize());
+        int page = Math.max(0, in.page());
         return new ListQuery(in.tag(), in.q(), sortBy, sortDir, page, size);
     }
 

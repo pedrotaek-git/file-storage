@@ -14,8 +14,8 @@ server:
 storage:
   provider: s3
   endpoint: http://localhost:9000
-  accessKey: minio
-  secretKey: minio123
+  accessKey: minioadmin
+  secretKey: minioadmin
   bucket: filestorage
   secure: false
 
@@ -23,3 +23,18 @@ app:
   pagination:
     default-size: 20
     max-size: 100
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,env,configprops,beans
+  endpoint:
+    health:
+      show-details: ALWAYS
+    env:
+      show-values: ALWAYS
+    configprops:
+      show-values: ALWAYS
+    beans:
+      enabled: true

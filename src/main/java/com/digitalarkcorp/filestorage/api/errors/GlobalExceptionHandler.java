@@ -3,6 +3,7 @@ package com.digitalarkcorp.filestorage.api.errors;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
@@ -52,6 +53,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<?> all(Exception e) {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(err("internal_error", "unexpected error"));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<?> hmnre(HttpMessageNotReadableException e) {
+        return ResponseEntity.badRequest().body(err("bad_request", "invalid request payload"));
     }
 
     private Map<String,String> err(String code, String msg) {
