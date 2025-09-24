@@ -12,6 +12,7 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -31,10 +32,10 @@ public class MongoFileMetadataRepository implements MetadataRepository {
     @Override
     public FileMetadata save(FileMetadata m) {
         FileMetadataDocument d = new FileMetadataDocument(
-                null,                                   // id (Mongo vai preencher)
+                null,
                 m.ownerId(),
                 m.filename(),
-                m.visibility().name(),                  // visibility como String no doc
+                m.visibility().name(),
                 m.tags(),
                 m.size(),
                 m.contentType(),
@@ -98,11 +99,39 @@ public class MongoFileMetadataRepository implements MetadataRepository {
 
     @Override
     public List<FileMetadata> listByOwner(String ownerId, ListQuery query) {
-        Query q = new Query(where("ownerId").is(ownerId));
-        applyFilters(q, query);
-        applyPagingAndSorting(q, query);
-        return mongo.find(q, FileMetadataDocument.class, COL).stream().map(this::map).toList();
+        List<Criteria> ands = new ArrayList<>();
+        ands.add(Criteria.where("ownerId").is(ownerId));
+
+        if (hasText(query.tag())) {
+            Pattern p = Pattern.compile("^" + Pattern.quote(query.tag()) + "$", Pattern.CASE_INSENSITIVE);
+            ands.add(Criteria.where("tags").elemMatch(Criteria.where("$regex").is(p)));
+        }
+        if (hasText(query.q())) {
+            Pattern rx = Pattern.compile(Pattern.quote(query.q()), Pattern.CASE_INSENSITIVE);
+            ands.add(Criteria.where("filename").regex(rx));
+        }
+
+        Query q = new Query(new Criteria().andOperator(ands.toArray(Criteria[]::new)));
+
+        // sort
+        String field = switch (query.sortBy()) {
+            case FILENAME -> "filename";
+            case CREATED_AT -> "createdAt";
+            case UPDATED_AT -> "updatedAt";
+            case CONTENT_TYPE -> "contentType";
+            default -> "createdAt";
+        };
+        q.with(Sort.by(query.sortDir() == ListQuery.SortDir.ASC ? Sort.Direction.ASC : Sort.Direction.DESC, field));
+
+        // page clamp
+        int size = Math.min(Math.max(query.size(), 1), 100);
+        int page = Math.max(query.page(), 0);
+        q.skip((long) page * size).limit(size);
+
+        var docs = mongo.find(q, FileMetadataDocument.class, COL);
+        return docs.stream().map(this::map).toList();
     }
+
 
     private Query ownerQuery(String ownerId, ListQuery query) {
         Criteria c = Criteria.where("ownerId").is(ownerId);
@@ -140,19 +169,20 @@ public class MongoFileMetadataRepository implements MetadataRepository {
 
     @Override
     public List<FileMetadata> listPublic(ListQuery query) {
-        Criteria c = where("visibility").is("PUBLIC");
+        List<Criteria> ands = new ArrayList<>();
+        ands.add(Criteria.where("visibility").is("PUBLIC"));
 
         if (hasText(query.tag())) {
             Pattern p = Pattern.compile("^" + Pattern.quote(query.tag()) + "$", Pattern.CASE_INSENSITIVE);
-            c = new Criteria().andOperator(
-                    where("visibility").is("PUBLIC"),
-                    where("tags").elemMatch(where("$regex").is(p))
-            );
+            ands.add(Criteria.where("tags").elemMatch(Criteria.where("$regex").is(p)));
+        }
+        if (hasText(query.q())) {
+            Pattern rx = Pattern.compile(Pattern.quote(query.q()), Pattern.CASE_INSENSITIVE);
+            ands.add(Criteria.where("filename").regex(rx));
         }
 
-        Query q = new Query(c);
+        Query q = new Query(new Criteria().andOperator(ands.toArray(Criteria[]::new)));
 
-        // sort
         String field = switch (query.sortBy()) {
             case FILENAME -> "filename";
             case CREATED_AT -> "createdAt";
@@ -162,14 +192,14 @@ public class MongoFileMetadataRepository implements MetadataRepository {
         };
         q.with(Sort.by(query.sortDir() == ListQuery.SortDir.ASC ? Sort.Direction.ASC : Sort.Direction.DESC, field));
 
-        // page
         int size = Math.min(Math.max(query.size(), 1), 100);
         int page = Math.max(query.page(), 0);
         q.skip((long) page * size).limit(size);
 
-        List<FileMetadataDocument> docs = mongo.find(q, FileMetadataDocument.class, COL);
+        var docs = mongo.find(q, FileMetadataDocument.class, COL);
         return docs.stream().map(this::map).toList();
     }
+
 
     @Override
     public boolean existsByOwnerAndFilename(String ownerId, String filename) {
@@ -232,6 +262,4 @@ public class MongoFileMetadataRepository implements MetadataRepository {
 
         q.with(Sort.by(dir, field));
     }
-
-
 }
