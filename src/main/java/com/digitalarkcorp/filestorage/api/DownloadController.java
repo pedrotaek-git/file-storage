@@ -1,10 +1,8 @@
 package com.digitalarkcorp.filestorage.api;
 
 import com.digitalarkcorp.filestorage.application.FileService;
-import com.digitalarkcorp.filestorage.domain.FileMetadata;
 import com.digitalarkcorp.filestorage.domain.ports.StoragePort;
 import org.springframework.core.io.InputStreamResource;
-import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -22,19 +20,18 @@ public class DownloadController {
     }
 
     @GetMapping("/d/{linkId}")
-    public ResponseEntity<Resource> download(@PathVariable String linkId) {
-        FileMetadata meta = service.listPublic(
-                new com.digitalarkcorp.filestorage.api.dto.ListQuery(null, null,
-                        com.digitalarkcorp.filestorage.api.dto.ListQuery.SortBy.CREATED_AT,
-                        com.digitalarkcorp.filestorage.api.dto.ListQuery.SortDir.DESC, 0, 1)
-        ).stream().findFirst().orElse(null); // not used, placeholder to avoid unused import
+    public ResponseEntity<InputStreamResource> download(@PathVariable String linkId) {
         StoragePort.Resource r = service.getForDownload(linkId);
 
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(r.contentType() != null ? MediaType.parseMediaType(r.contentType()) : MediaType.APPLICATION_OCTET_STREAM);
-        headers.setContentLength(r.contentLength());
         headers.setContentDisposition(ContentDisposition.attachment().filename("download.bin").build());
+        String ct = r.contentType();
+        headers.setContentType((ct != null && !ct.isBlank()) ? MediaType.parseMediaType(ct) : MediaType.APPLICATION_OCTET_STREAM);
+        headers.setContentLength(r.contentLength());
+        headers.add(HttpHeaders.ACCEPT_RANGES, "bytes");
 
-        return ResponseEntity.ok().headers(headers).body(new InputStreamResource(r.stream()));
+        return ResponseEntity.ok()
+                .headers(headers)
+                .body(new InputStreamResource(r.stream()));
     }
 }

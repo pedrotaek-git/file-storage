@@ -1,125 +1,226 @@
 package com.digitalarkcorp.filestorage.infrastructure.mongo;
 
 import com.digitalarkcorp.filestorage.api.dto.ListQuery;
-import com.digitalarkcorp.filestorage.application.util.FileQueries;
 import com.digitalarkcorp.filestorage.domain.FileMetadata;
-import com.digitalarkcorp.filestorage.domain.Visibility;
 import com.digitalarkcorp.filestorage.domain.ports.MetadataRepository;
 import com.digitalarkcorp.filestorage.infrastructure.mongo.model.FileMetadataDocument;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import static org.springframework.data.mongodb.core.query.Criteria.where;
 
+@Repository
 public class MongoFileMetadataRepository implements MetadataRepository {
 
-    private final MongoTemplate template;
+    private static final String COL = "files";
 
-    public MongoFileMetadataRepository(MongoTemplate template) {
-        this.template = template;
+    private final MongoTemplate mongo;
+
+    public MongoFileMetadataRepository(MongoTemplate mongo) {
+        this.mongo = mongo;
     }
 
     @Override
     public FileMetadata save(FileMetadata m) {
-        FileMetadataDocument doc = FileMetadataDocument.fromDomain(m);
-        template.save(doc, "files");
-        return doc.toDomain();
+        FileMetadataDocument d = new FileMetadataDocument(
+                null,                                   // id (Mongo vai preencher)
+                m.ownerId(),
+                m.filename(),
+                m.visibility().name(),                  // visibility como String no doc
+                m.tags(),
+                m.size(),
+                m.contentType(),
+                m.contentHash(),
+                m.linkId(),
+                m.status().name(),
+                m.createdAt(),
+                m.updatedAt()
+        );
+
+        d = mongo.insert(d, "files");
+
+        return map(d);
     }
+
+    private FileMetadata map(FileMetadataDocument d) {
+        return new FileMetadata(
+                d.id(),
+                d.ownerId(),
+                d.filename(),
+                com.digitalarkcorp.filestorage.domain.Visibility.valueOf(d.visibility()),
+                d.tags(),
+                d.size(),
+                d.contentType(),
+                d.contentHash(),
+                d.linkId(),
+                com.digitalarkcorp.filestorage.domain.FileMetadata.FileStatus.valueOf(d.status()),
+                d.createdAt(),
+                d.updatedAt()
+        );
+    }
+
 
     @Override
     public FileMetadata findById(String id) {
-        FileMetadataDocument d = template.findById(id, FileMetadataDocument.class, "files");
-        return d == null ? null : d.toDomain();
+        FileMetadataDocument d = mongo.findById(id, FileMetadataDocument.class, COL);
+        return d == null ? null : map(d);
     }
 
     @Override
     public FileMetadata findByLinkId(String linkId) {
         Query q = new Query(where("linkId").is(linkId));
-        FileMetadataDocument d = template.findOne(q, FileMetadataDocument.class, "files");
-        return d == null ? null : d.toDomain();
+        FileMetadataDocument d = mongo.findOne(q, FileMetadataDocument.class, COL);
+        return d == null ? null : map(d);
     }
 
     @Override
     public void rename(String id, String newFilename, Instant now) {
-        Query q = new Query(where("_id").is(id));
-        FileMetadataDocument doc = template.findOne(q, FileMetadataDocument.class, "files");
-        if (doc == null) return;
-        doc.setFilename(newFilename);
-        doc.setUpdatedAt(now);
-        template.save(doc, "files");
+        Query q = new Query(Criteria.where("_id").is(id));
+        Update u = new Update().set("filename", newFilename).set("updatedAt", now);
+        mongo.updateFirst(q, u, "files");
     }
+
 
     @Override
     public boolean deleteByIdAndOwner(String id, String ownerId) {
         Query q = new Query(where("_id").is(id).and("ownerId").is(ownerId));
-        return template.remove(q, "files").getDeletedCount() > 0;
+        var res = mongo.remove(q, COL);
+        return res.getDeletedCount() > 0;
     }
 
     @Override
     public List<FileMetadata> listByOwner(String ownerId, ListQuery query) {
         Query q = new Query(where("ownerId").is(ownerId));
-        applySearchAndSort(q, query);
-        List<FileMetadataDocument> docs = template.find(q, FileMetadataDocument.class, "files");
-        return docs.stream().map(FileMetadataDocument::toDomain).toList();
+        applyFilters(q, query);
+        applyPagingAndSorting(q, query);
+        return mongo.find(q, FileMetadataDocument.class, COL).stream().map(this::map).toList();
     }
+
+    private Query ownerQuery(String ownerId, ListQuery query) {
+        Criteria c = Criteria.where("ownerId").is(ownerId);
+
+        if (query.q() != null && !query.q().isBlank()) {
+            String esc = Pattern.quote(query.q());
+            c = new Criteria().andOperator(
+                    Criteria.where("ownerId").is(ownerId),
+                    Criteria.where("filename").regex(esc, "i")
+            );
+        }
+        if (query.tag() != null && !query.tag().isBlank()) {
+            String escTag = Pattern.quote(query.tag());
+            c = new Criteria().andOperator(
+                    c,
+                    Criteria.where("tags").regex("^" + escTag + "$", "i")
+            );
+        }
+        Query q = new Query(c);
+
+        String field = switch (query.sortBy()) {
+            case FILENAME -> "filename";
+            case CREATED_AT -> "createdAt";
+            case UPDATED_AT -> "updatedAt";
+            case CONTENT_TYPE -> "contentType";
+            default -> "createdAt";
+        };
+        q.with(Sort.by(query.sortDir() == ListQuery.SortDir.ASC ? Sort.Direction.ASC : Sort.Direction.DESC, field));
+
+        int size = Math.min(Math.max(query.size(), 1), 100);
+        int page = Math.max(query.page(), 0);
+        q.skip((long) page * size).limit(size);
+        return q;
+    }
+
 
     @Override
     public List<FileMetadata> listPublic(ListQuery query) {
-        Query q = new Query(where("visibility").is(Visibility.PUBLIC.name()));
-        applySearchAndSort(q, query);
-        List<FileMetadataDocument> docs = template.find(q, FileMetadataDocument.class, "files");
-        return docs.stream().map(FileMetadataDocument::toDomain).toList();
+        Criteria c = Criteria.where("visibility").is("PUBLIC");
+        if (query.tag() != null && !query.tag().isBlank()) {
+            String esc = Pattern.quote(query.tag());
+            c = new Criteria().andOperator(
+                    Criteria.where("visibility").is("PUBLIC"),
+                    Criteria.where("tags").regex("^" + esc + "$", "i")
+            );
+        }
+        Query q = new Query(c);
+
+        // sort
+        String field = switch (query.sortBy()) {
+            case FILENAME -> "filename";
+            case CREATED_AT -> "createdAt";
+            case UPDATED_AT -> "updatedAt";
+            case CONTENT_TYPE -> "contentType";
+            default -> "createdAt";
+        };
+        q.with(Sort.by(query.sortDir() == ListQuery.SortDir.ASC ? Sort.Direction.ASC : Sort.Direction.DESC, field));
+
+        // page
+        int size = Math.min(Math.max(query.size(), 1), 100);
+        int page = Math.max(query.page(), 0);
+        q.skip((long) page * size).limit(size);
+
+        List<FileMetadataDocument> docs = mongo.find(q, FileMetadataDocument.class, "files");
+        return docs.stream().map(this::map).toList();
     }
+
+
 
     @Override
     public boolean existsByOwnerAndFilename(String ownerId, String filename) {
         Query q = new Query(where("ownerId").is(ownerId).and("filename").is(filename));
-        return template.exists(q, "files");
+        return mongo.exists(q, FileMetadataDocument.class, COL);
     }
 
     @Override
     public boolean existsByOwnerAndContentHash(String ownerId, String contentHash) {
         Query q = new Query(where("ownerId").is(ownerId).and("contentHash").is(contentHash));
-        return template.exists(q, "files");
-    }
-
-    private void applySearchAndSort(Query q, ListQuery query) {
-        // Filtros
-        if (query.tag() != null && !query.tag().isBlank()) {
-            q.addCriteria(where("tags").regex("^" + FileQueries.escapeRegex(query.tag()) + "$", "i"));
-        }
-        if (query.q() != null && !query.q().isBlank()) {
-            q.addCriteria(Criteria.where("filename").regex(FileQueries.escapeRegex(query.q()), "i"));
-        }
-
-        String sortField = switch (query.sortBy()) {
-            case FILENAME -> "filename";
-            case SIZE -> "size";
-            case CREATED_AT -> "createdAt";
-            case UPDATED_AT -> "updatedAt";
-            case TAG -> "tags";              // obs.: ordena pelo primeiro elemento do array
-            case CONTENT_TYPE -> "contentType";
-        };
-        Sort.Direction dir = (query.sortDir() == ListQuery.SortDir.DESC)
-                ? Sort.Direction.DESC
-                : Sort.Direction.ASC;
-        q.with(Sort.by(dir, sortField));
-
-        int page = Math.max(0, query.page());
-        int size = Math.max(1, query.size());
-        q.with(PageRequest.of(page, size));
+        return mongo.exists(q, FileMetadataDocument.class, COL);
     }
 
     @Override
     public long countByContentHash(String contentHash) {
         Query q = new Query(where("contentHash").is(contentHash));
-        return template.count(q, "files");
+        return mongo.count(q, FileMetadataDocument.class, COL);
     }
 
+    private static boolean hasText(String s) {
+        return s != null && !s.isBlank();
+    }
+
+    private static void applyFilters(Query q, ListQuery query) {
+        if (hasText(query.q())) {
+            Pattern rx = Pattern.compile(Pattern.quote(query.q()), Pattern.CASE_INSENSITIVE);
+            q.addCriteria(where("filename").regex(rx));
+        }
+        if (hasText(query.tag())) {
+            Pattern p = Pattern.compile("^" + Pattern.quote(query.tag()) + "$", Pattern.CASE_INSENSITIVE);
+            q.addCriteria(where("tags").regex(p));
+        }
+    }
+
+    private static void applyPagingAndSorting(Query q, ListQuery query) {
+        int page = query.page() < 0 ? 0 : query.page();
+        int size = query.size() <= 0 ? 20 : query.size();
+        q.skip((long) page * size).limit(size);
+
+        var by = (query.sortBy() != null) ? query.sortBy() : ListQuery.SortBy.CREATED_AT;
+        var dir = (query.sortDir() == ListQuery.SortDir.DESC) ? Sort.Direction.DESC : Sort.Direction.ASC;
+
+        String field;
+        switch (by) {
+            case UPDATED_AT -> field = "updatedAt";
+            case FILENAME   -> field = "filename";
+            case SIZE       -> field = "size";
+            case CREATED_AT -> field = "createdAt";
+            default         -> field = "createdAt";
+        }
+        q.with(Sort.by(dir, field));
+    }
 }
