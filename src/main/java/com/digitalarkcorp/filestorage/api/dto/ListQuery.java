@@ -8,6 +8,7 @@ public record ListQuery(
         Integer page,
         Integer size
 ) {
-    public enum SortBy { FILENAME, CREATED_AT, UPDATED_AT, SIZE }
+    public enum SortBy { FILENAME, CREATED_AT, UPDATED_AT, SIZE, TAG, CONTENT_TYPE }
+
     public enum SortDir { ASC, DESC }
 }

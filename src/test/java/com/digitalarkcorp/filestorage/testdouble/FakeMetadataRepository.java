@@ -155,7 +155,8 @@ public class FakeMetadataRepository implements MetadataRepository {
     @Override
     public long countByContentHash(String contentHash) {
         return byId.values().stream()
-                .filter(f -> contentHash.equals(f.contentHash()))
+                .filter(f -> contentHash != null && contentHash.equals(f.contentHash()))
                 .count();
     }
+
 }

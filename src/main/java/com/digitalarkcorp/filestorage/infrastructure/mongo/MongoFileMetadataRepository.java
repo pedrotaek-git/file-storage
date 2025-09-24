@@ -71,7 +71,7 @@ public class MongoFileMetadataRepository implements MetadataRepository {
 
     @Override
     public List<FileMetadata> listPublic(ListQuery query) {
-        Query q = new Query(where("visibility").is(Visibility.PUBLIC));
+        Query q = new Query(where("visibility").is(Visibility.PUBLIC.name()));
         applySearchAndSort(q, query);
         List<FileMetadataDocument> docs = template.find(q, FileMetadataDocument.class, "files");
         return docs.stream().map(FileMetadataDocument::toDomain).toList();
@@ -90,26 +90,35 @@ public class MongoFileMetadataRepository implements MetadataRepository {
     }
 
     private void applySearchAndSort(Query q, ListQuery query) {
+        // Filtros
         if (query.tag() != null && !query.tag().isBlank()) {
             q.addCriteria(where("tags").regex("^" + FileQueries.escapeRegex(query.tag()) + "$", "i"));
         }
         if (query.q() != null && !query.q().isBlank()) {
             q.addCriteria(Criteria.where("filename").regex(FileQueries.escapeRegex(query.q()), "i"));
         }
+
         String sortField = switch (query.sortBy()) {
             case FILENAME -> "filename";
             case SIZE -> "size";
             case CREATED_AT -> "createdAt";
             case UPDATED_AT -> "updatedAt";
+            case TAG -> "tags";              // obs.: ordena pelo primeiro elemento do array
+            case CONTENT_TYPE -> "contentType";
         };
-        Sort.Direction dir = (query.sortDir() == ListQuery.SortDir.DESC) ? Sort.Direction.DESC : Sort.Direction.ASC;
+        Sort.Direction dir = (query.sortDir() == ListQuery.SortDir.DESC)
+                ? Sort.Direction.DESC
+                : Sort.Direction.ASC;
         q.with(Sort.by(dir, sortField));
-        q.with(PageRequest.of(Math.max(0, query.page()), Math.max(1, query.size())));
+
+        int page = Math.max(0, query.page());
+        int size = Math.max(1, query.size());
+        q.with(PageRequest.of(page, size));
     }
 
     @Override
     public long countByContentHash(String contentHash) {
-        Query q = new Query(Criteria.where("contentHash").is(contentHash));
+        Query q = new Query(where("contentHash").is(contentHash));
         return template.count(q, "files");
     }
 

@@ -14,7 +14,10 @@ public interface MetadataRepository {
     boolean deleteByIdAndOwner(String id, String ownerId);
     List<FileMetadata> listByOwner(String ownerId, ListQuery query);
     List<FileMetadata> listPublic(ListQuery query);
+
     boolean existsByOwnerAndFilename(String ownerId, String filename);
     boolean existsByOwnerAndContentHash(String ownerId, String contentHash);
-    long countByContentHash(String contentHash);  // <— novo
+
+    // <-- ADICIONE ESTA LINHA
+    long countByContentHash(String contentHash);
 }
