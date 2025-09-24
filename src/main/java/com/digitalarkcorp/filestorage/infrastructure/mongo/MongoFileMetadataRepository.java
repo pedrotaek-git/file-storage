@@ -138,35 +138,13 @@ public class MongoFileMetadataRepository implements MetadataRepository {
         return q;
     }
 
-
     @Override
     public List<FileMetadata> listPublic(ListQuery query) {
-        Criteria c = Criteria.where("visibility").is("PUBLIC");
-        if (query.tag() != null && !query.tag().isBlank()) {
-            String esc = Pattern.quote(query.tag());
-            c = new Criteria().andOperator(
-                    Criteria.where("visibility").is("PUBLIC"),
-                    Criteria.where("tags").regex("^" + esc + "$", "i")
-            );
-        }
-        Query q = new Query(c);
+        Query q = new Query(Criteria.where("visibility").is("PUBLIC"));
+        applyFilters(q, query);          // q/tag (case-insensitive) se vierem
+        applyPagingAndSorting(q, query); // agora null-safe
 
-        // sort
-        String field = switch (query.sortBy()) {
-            case FILENAME -> "filename";
-            case CREATED_AT -> "createdAt";
-            case UPDATED_AT -> "updatedAt";
-            case CONTENT_TYPE -> "contentType";
-            default -> "createdAt";
-        };
-        q.with(Sort.by(query.sortDir() == ListQuery.SortDir.ASC ? Sort.Direction.ASC : Sort.Direction.DESC, field));
-
-        // page
-        int size = Math.min(Math.max(query.size(), 1), 100);
-        int page = Math.max(query.page(), 0);
-        q.skip((long) page * size).limit(size);
-
-        List<FileMetadataDocument> docs = mongo.find(q, FileMetadataDocument.class, "files");
+        List<FileMetadataDocument> docs = mongo.find(q, FileMetadataDocument.class, COL);
         return docs.stream().map(this::map).toList();
     }
 
@@ -201,26 +179,36 @@ public class MongoFileMetadataRepository implements MetadataRepository {
         }
         if (hasText(query.tag())) {
             Pattern p = Pattern.compile("^" + Pattern.quote(query.tag()) + "$", Pattern.CASE_INSENSITIVE);
-            q.addCriteria(where("tags").regex(p));
+            q.addCriteria(Criteria.where("tags").elemMatch(Criteria.where("$regex").is(p)));
         }
     }
 
     private static void applyPagingAndSorting(Query q, ListQuery query) {
-        int page = query.page() < 0 ? 0 : query.page();
-        int size = query.size() <= 0 ? 20 : query.size();
+        // null-safe paging
+        Integer pObj = query.page();
+        Integer sObj = query.size();
+
+        int page = (pObj == null || pObj < 0) ? 0 : pObj;
+        int size = (sObj == null || sObj <= 0) ? 20 : Math.min(sObj, 100);
+
         q.skip((long) page * size).limit(size);
 
-        var by = (query.sortBy() != null) ? query.sortBy() : ListQuery.SortBy.CREATED_AT;
-        var dir = (query.sortDir() == ListQuery.SortDir.DESC) ? Sort.Direction.DESC : Sort.Direction.ASC;
+        // null-safe sort
+        var by  = (query.sortBy()  != null) ? query.sortBy()  : ListQuery.SortBy.CREATED_AT;
+        var dir = (query.sortDir() != null && query.sortDir() == ListQuery.SortDir.ASC)
+                ? Sort.Direction.ASC : Sort.Direction.DESC;
 
-        String field;
-        switch (by) {
-            case UPDATED_AT -> field = "updatedAt";
-            case FILENAME   -> field = "filename";
-            case SIZE       -> field = "size";
-            case CREATED_AT -> field = "createdAt";
-            default         -> field = "createdAt";
-        }
+        String field = switch (by) {
+            case UPDATED_AT   -> "updatedAt";
+            case FILENAME     -> "filename";
+            case SIZE         -> "size";
+            case CONTENT_TYPE -> "contentType";
+            case CREATED_AT   -> "createdAt";
+            default           -> "createdAt";
+        };
+
         q.with(Sort.by(dir, field));
     }
+
+
 }

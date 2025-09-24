@@ -55,7 +55,7 @@ public class FileController {
 
     @GetMapping(value = "/public", produces = MediaType.APPLICATION_JSON_VALUE)
     public List<FileResponse> listPublic(@Valid ListQuery query) {
-        ListQuery q = normalize(query);
+        var q = normalize(query);
         return service.listPublic(q).stream().map(FileResponse::from).toList();
     }
 
@@ -70,20 +70,29 @@ public class FileController {
 
     @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
     public List<FileResponse> listByOwner(
-            @RequestHeader("X-User-Id") @NotBlank String userId,
-            @Valid ListQuery query
+            @RequestHeader("X-User-Id") String userId,
+            ListQuery query
     ) {
-        ListQuery q = normalize(query);
+        var q = normalize(query);
         return service.listByOwner(userId, q).stream().map(FileResponse::from).toList();
     }
 
-    private ListQuery normalize(ListQuery in) {
-        ListQuery.SortBy sortBy = (in.sortBy() != null) ? in.sortBy() : ListQuery.SortBy.CREATED_AT;
-        ListQuery.SortDir sortDir = (in.sortDir() != null) ? in.sortDir() : ListQuery.SortDir.DESC;
-        int size = in.size() <= 0 ? pagination.defaultSize() : Math.min(in.size(), pagination.maxSize());
-        int page = Math.max(0, in.page());
-        return new ListQuery(in.tag(), in.q(), sortBy, sortDir, page, size);
+    private static ListQuery normalize(ListQuery q) {
+        // null-safe defaults + clamp
+        Integer pObj = q.page();
+        Integer sObj = q.size();
+
+        int page = (pObj == null || pObj < 0) ? 0 : pObj;
+        int size = (sObj == null || sObj <= 0) ? 20 : Math.min(sObj, 100);
+
+        var sortBy  = (q.sortBy()  != null) ? q.sortBy()  : ListQuery.SortBy.CREATED_AT;
+        var sortDir = (q.sortDir() != null) ? q.sortDir() : ListQuery.SortDir.DESC;
+
+        return new ListQuery(q.q(), q.tag(), sortBy, sortDir, page, size);
+
     }
+
+
 
     @DeleteMapping("/{id}")
     public java.util.Map<String, Boolean> delete(
