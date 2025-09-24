@@ -2,19 +2,11 @@ package com.digitalarkcorp.filestorage.infrastructure.mongo.model;
 
 import com.digitalarkcorp.filestorage.domain.FileMetadata;
 import com.digitalarkcorp.filestorage.domain.Visibility;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 import java.util.List;
 
-@Getter
-@Setter
-@NoArgsConstructor
-@Document("files")
 public class FileMetadataDocument {
     @Id
     private String id;
@@ -35,7 +27,7 @@ public class FileMetadataDocument {
         d.id = m.id();
         d.ownerId = m.ownerId();
         d.filename = m.filename();
-        d.visibility = m.visibility(); // Visibility (top-level)
+        d.visibility = m.visibility();
         d.tags = m.tags();
         d.size = m.size();
         d.contentType = m.contentType();
@@ -53,4 +45,7 @@ public class FileMetadataDocument {
                 contentType, contentHash, linkId, status, createdAt, updatedAt
         );
     }
+
+    public void setFilename(String filename) { this.filename = filename; }
+    public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
 }

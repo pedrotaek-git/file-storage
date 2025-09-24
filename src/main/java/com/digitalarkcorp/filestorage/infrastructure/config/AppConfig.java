@@ -13,14 +13,12 @@ import java.time.Clock;
 public class AppConfig {
 
     @Bean
-    public Clock clock() {
+    Clock clock() {
         return Clock.systemUTC();
     }
 
     @Bean
-    public FileService fileService(MetadataRepository repository,
-                                   StoragePort storage,
-                                   Clock clock) {
+    FileService fileService(MetadataRepository repository, StoragePort storage, Clock clock) {
         return new DefaultFileService(repository, storage, clock);
     }
 }

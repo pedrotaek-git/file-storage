@@ -3,6 +3,8 @@ package com.digitalarkcorp.filestorage.api.errors;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.BindException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -22,6 +24,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(err("forbidden", e.getMessage()));
     }
 
+    @ExceptionHandler(SecurityException.class)
+    public ResponseEntity<?> se(SecurityException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(err("forbidden", e.getMessage()));
+    }
+
     @ExceptionHandler(ConflictException.class)
     public ResponseEntity<?> cf(ConflictException e) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(err("conflict", e.getMessage()));
@@ -37,9 +44,9 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(err("bad_request", "Missing header: " + e.getHeaderName()));
     }
 
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<?> iae(IllegalArgumentException e) {
-        return ResponseEntity.badRequest().body(err("bad_request", e.getMessage()));
+    @ExceptionHandler({ IllegalArgumentException.class, BindException.class, MethodArgumentNotValidException.class })
+    public ResponseEntity<?> badInput(Exception e) {
+        return ResponseEntity.badRequest().body(err("bad_request", "validation error"));
     }
 
     @ExceptionHandler(Exception.class)

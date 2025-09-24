@@ -2,6 +2,8 @@ package com.digitalarkcorp.filestorage.application;
 
 import com.digitalarkcorp.filestorage.api.dto.ListQuery;
 import com.digitalarkcorp.filestorage.api.dto.RenameRequest;
+import com.digitalarkcorp.filestorage.api.errors.ConflictException;
+import com.digitalarkcorp.filestorage.api.errors.NotFoundException;
 import com.digitalarkcorp.filestorage.application.util.FileQueries;
 import com.digitalarkcorp.filestorage.domain.FileMetadata;
 import com.digitalarkcorp.filestorage.domain.Visibility;
@@ -38,28 +40,28 @@ public class DefaultFileService implements FileService {
                                long contentLength,
                                InputStream data) {
         try {
-            String normName = FileQueries.normalizeFilename(filename);
             byte[] bytes = data.readAllBytes();
             String hash = FileQueries.sha256(bytes);
+            String normName = FileQueries.normalizeFilename(filename);
 
             if (repository.existsByOwnerAndFilename(ownerId, normName)) {
-                throw new IllegalStateException("duplicate filename");
+                throw new ConflictException("filename already exists for owner");
             }
             if (repository.existsByOwnerAndContentHash(ownerId, hash)) {
-                throw new IllegalStateException("duplicate content");
+                throw new ConflictException("content already exists for owner");
             }
 
             String objectKey = hash;
             storage.put(objectKey, new ByteArrayInputStream(bytes), contentLength, contentType);
 
             Instant now = Instant.now(clock);
-            FileMetadata toSave = new FileMetadata(
+            FileMetadata meta = new FileMetadata(
                     null,
                     ownerId,
                     normName,
                     visibility,
                     tags,
-                    contentLength,
+                    bytes.length,
                     contentType,
                     hash,
                     UUID.randomUUID().toString(),
@@ -67,15 +69,10 @@ public class DefaultFileService implements FileService {
                     now,
                     now
             );
-            return repository.save(toSave);
+            return repository.save(meta);
         } catch (IOException e) {
-            throw new RuntimeException("upload stream read error", e);
+            throw new RuntimeException("upload io error", e);
         }
-    }
-
-    @Override
-    public List<FileMetadata> listByOwner(String ownerId, ListQuery query) {
-        return repository.listByOwner(ownerId, query);
     }
 
     @Override
@@ -84,14 +81,20 @@ public class DefaultFileService implements FileService {
     }
 
     @Override
+    public List<FileMetadata> listByOwner(String ownerId, ListQuery query) {
+        return repository.listByOwner(ownerId, query);
+    }
+
+    @Override
     public FileMetadata rename(String userId, String id, RenameRequest req) {
         FileMetadata meta = repository.findById(id);
-        if (meta == null) throw new IllegalArgumentException("file not found");
-        if (!Objects.equals(meta.ownerId(), userId)) throw new SecurityException("not allowed");
-
+        if (meta == null) throw new NotFoundException("file not found");
+        if (!Objects.equals(meta.ownerId(), userId)) {
+            throw new SecurityException("not owner");
+        }
         String newName = FileQueries.normalizeFilename(req.newFilename());
         if (repository.existsByOwnerAndFilename(userId, newName)) {
-            throw new IllegalStateException("duplicate filename");
+            throw new ConflictException("filename already exists for owner");
         }
         repository.rename(id, newName, Instant.now(clock));
         return repository.findById(id);
@@ -100,12 +103,19 @@ public class DefaultFileService implements FileService {
     @Override
     public boolean delete(String userId, String id) {
         FileMetadata meta = repository.findById(id);
-        if (meta == null) throw new IllegalArgumentException("file not found");
-        if (!Objects.equals(meta.ownerId(), userId)) throw new SecurityException("not allowed");
-
+        if (meta == null) throw new NotFoundException("file not found");
+        if (!Objects.equals(meta.ownerId(), userId)) {
+            throw new SecurityException("not owner");
+        }
         boolean deleted = repository.deleteByIdAndOwner(id, userId);
         if (deleted) {
-            storage.delete(meta.contentHash()); // object key = hash
+            long remaining = repository.countByContentHash(meta.contentHash());
+            if (remaining == 0) {
+                try {
+                    storage.delete(meta.contentHash()); // tolera ausência no backend
+                } catch (RuntimeException ignored) {
+                }
+            }
         }
         return deleted;
     }
@@ -113,7 +123,7 @@ public class DefaultFileService implements FileService {
     @Override
     public StoragePort.Resource getForDownload(String linkId) {
         FileMetadata meta = repository.findByLinkId(linkId);
-        if (meta == null) throw new IllegalArgumentException("file not found");
+        if (meta == null) throw new NotFoundException("file not found");
         return storage.get(meta.contentHash());
     }
 }

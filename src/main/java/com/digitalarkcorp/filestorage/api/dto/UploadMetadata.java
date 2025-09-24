@@ -10,4 +10,4 @@ public record UploadMetadata(
         @NotBlank String filename,
         @NotNull Visibility visibility,
         List<String> tags
-) { }
+) {}

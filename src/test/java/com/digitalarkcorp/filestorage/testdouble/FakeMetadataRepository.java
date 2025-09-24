@@ -151,4 +151,11 @@ public class FakeMetadataRepository implements MetadataRepository {
     private static String genId() {
         return UUID.randomUUID().toString().replace("-", "").substring(0, 24);
     }
+
+    @Override
+    public long countByContentHash(String contentHash) {
+        return byId.values().stream()
+                .filter(f -> contentHash.equals(f.contentHash()))
+                .count();
+    }
 }
