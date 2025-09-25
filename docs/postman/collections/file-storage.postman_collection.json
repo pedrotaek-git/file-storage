@@ -1,0 +1,429 @@
+{
+  "info": {
+    "name": "file-storage (no environment)",
+    "_postman_id": "8e1c6b51-6c2e-4dcb-9b7b-20250925080648",
+    "description": "Collection to validate the STORAGE API end-to-end without environments. Set {{baseUrl}} if you want to override the default via collection variables.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "u1",
+      "type": "string"
+    },
+    {
+      "key": "filename",
+      "value": "demo-${ts}.txt",
+      "type": "string"
+    },
+    {
+      "key": "visibility",
+      "value": "PUBLIC",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "0 - Service health & info",
+      "item": [
+        {
+          "name": "Actuator - Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 - Upload & link generation",
+      "item": [
+        {
+          "name": "Upload (PUBLIC, tags=[Demo])",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/files",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "files"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "metadata",
+                  "type": "text",
+                  "contentType": "application/json",
+                  "value": "{\"filename\":\"{{filename}}\",\"visibility\":\"{{visibility}}\",\"tags\":[\"Demo\"]}"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [
+                    "/etc/hosts"
+                  ],
+                  "contentType": "text/plain"
+                }
+              ]
+            },
+            "description": "Select a local file for 'file'. On success saves fileId, linkId, filename, contentHash."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Save response fields to collection variables",
+                  "const res = pm.response.json();",
+                  "pm.collectionVariables.set(\"fileId\", res.id);",
+                  "pm.collectionVariables.set(\"linkId\", res.linkId);",
+                  "pm.collectionVariables.set(\"filename\", res.filename);",
+                  "pm.collectionVariables.set(\"contentHash\", res.contentHash);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2 - List PUBLIC files (filter/sort/page)",
+      "item": [
+        {
+          "name": "List PUBLIC by tag (case-insensitive exact)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/files/public?tag=demo&page=0&size=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "files",
+                "public"
+              ],
+              "query": [
+                {
+                  "key": "tag",
+                  "value": "demo"
+                },
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List PUBLIC by filename contains (q)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/files/public?q={{filename}}&page=0&size=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "files",
+                "public"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "{{filename}}"
+                },
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List PUBLIC sorted by FILENAME ASC",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/files/public?sortBy=FILENAME&sortDir=ASC&page=0&size=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "files",
+                "public"
+              ],
+              "query": [
+                {
+                  "key": "sortBy",
+                  "value": "FILENAME"
+                },
+                {
+                  "key": "sortDir",
+                  "value": "ASC"
+                },
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 - List OWNER files (requires X-User-Id)",
+      "item": [
+        {
+          "name": "List OWNER by tag (case-insensitive)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/files?tag=demo&page=0&size=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "files"
+              ],
+              "query": [
+                {
+                  "key": "tag",
+                  "value": "demo"
+                },
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List OWNER by filename contains (q)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/files?q={{filename}}&page=0&size=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "files"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "{{filename}}"
+                },
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 - Rename (no reupload)",
+      "item": [
+        {
+          "name": "Rename by id (owner)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/files/{{fileId}}/name",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "files",
+                "{{fileId}}",
+                "name"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"newFilename\":\"{{filename}}-renamed.txt\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 - Download by link (PUBLIC & PRIVATE)",
+      "item": [
+        {
+          "name": "Download by linkId",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/d/{{linkId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "d",
+                "{{linkId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6 - Delete (owner-only)",
+      "item": [
+        {
+          "name": "Delete by id (owner)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/files/{{fileId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "files",
+                "{{fileId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "7 - Conflicts & concurrency (owner uniqueness)",
+      "item": [
+        {
+          "name": "Upload conflict (same name, same owner)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/files",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "files"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "metadata",
+                  "type": "text",
+                  "contentType": "application/json",
+                  "value": "{\"filename\":\"{{filename}}\",\"visibility\":\"{{visibility}}\",\"tags\":[\"Demo\"]}"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [
+                    "/etc/hosts"
+                  ],
+                  "contentType": "text/plain"
+                }
+              ]
+            },
+            "description": "Should return 409 when filename repeats for the same owner."
+          }
+        }
+      ]
+    }
+  ]
+}
