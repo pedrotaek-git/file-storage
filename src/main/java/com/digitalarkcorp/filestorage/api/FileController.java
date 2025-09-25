@@ -64,10 +64,17 @@ public class FileController {
         return from(m);
     }
 
-    @GetMapping(value = "/public", produces = MediaType.APPLICATION_JSON_VALUE)
-    public List<FileResponse> listPublic(@Valid ListQuery query) {
-        var q = normalize(query);
-        return service.listPublic(q).stream().map(FileResponse::from).toList();
+    @GetMapping("/public")
+    public List<FileResponse> listPublic(
+            @RequestParam(name = "tag", required = false) String tag,
+            @RequestParam(name = "q",   required = false) String q,
+            @RequestParam(name = "sortBy",  required = false, defaultValue = "CREATED_AT") ListQuery.SortBy sortBy,
+            @RequestParam(name = "sortDir", required = false, defaultValue = "DESC")       ListQuery.SortDir sortDir,
+            @RequestParam(name = "page",    required = false, defaultValue = "0")          Integer page,
+            @RequestParam(name = "size",    required = false, defaultValue = "20")         Integer size
+    ) {
+        var query = normalize(new ListQuery(tag, q, sortBy, sortDir, page, size));
+        return service.listPublic(query).stream().map(FileResponse::from).toList();
     }
 
     @PatchMapping(value = "/{id}/name", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
@@ -79,17 +86,21 @@ public class FileController {
         return from(service.rename(userId, id, req));
     }
 
-    @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
+    @GetMapping
     public List<FileResponse> listByOwner(
-            @RequestHeader("X-User-Id") @NotBlank String userId,
-            @Valid ListQuery query
+            @RequestHeader("X-User-Id") String userId,
+            @RequestParam(name = "tag", required = false) String tag,
+            @RequestParam(name = "q",   required = false) String q,
+            @RequestParam(name = "sortBy",  required = false, defaultValue = "CREATED_AT") ListQuery.SortBy sortBy,
+            @RequestParam(name = "sortDir", required = false, defaultValue = "DESC")       ListQuery.SortDir sortDir,
+            @RequestParam(name = "page",    required = false, defaultValue = "0")          Integer page,
+            @RequestParam(name = "size",    required = false, defaultValue = "20")         Integer size
     ) {
-        var q = normalize(query);
-        return service.listByOwner(userId, q).stream().map(FileResponse::from).toList();
+        var query = normalize(new ListQuery(tag, q, sortBy, sortDir, page, size));
+        return service.listByOwner(userId, query).stream().map(FileResponse::from).toList();
     }
 
     private static ListQuery normalize(ListQuery q) {
-        // null-safe defaults + clamp
         Integer pObj = q.page();
         Integer sObj = q.size();
 
@@ -99,11 +110,8 @@ public class FileController {
         var sortBy  = (q.sortBy()  != null) ? q.sortBy()  : ListQuery.SortBy.CREATED_AT;
         var sortDir = (q.sortDir() != null) ? q.sortDir() : ListQuery.SortDir.DESC;
 
-        return new ListQuery(q.q(), q.tag(), sortBy, sortDir, page, size);
-
+        return new ListQuery(q.tag(), q.q(), sortBy, sortDir, page, size);
     }
-
-
 
     @DeleteMapping("/{id}")
     public java.util.Map<String, Boolean> delete(

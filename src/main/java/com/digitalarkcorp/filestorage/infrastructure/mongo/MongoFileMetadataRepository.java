@@ -103,7 +103,7 @@ public class MongoFileMetadataRepository implements MetadataRepository {
 
         if (hasText(query.tag())) {
             Pattern p = Pattern.compile("^" + Pattern.quote(query.tag()) + "$", Pattern.CASE_INSENSITIVE);
-            ands.add(Criteria.where("tags").regex(p));
+            ands.add(Criteria.where("tags").elemMatch(Criteria.where("$regex").is(p)));
         }
 
         if (hasText(query.q())) {
@@ -173,7 +173,7 @@ public class MongoFileMetadataRepository implements MetadataRepository {
 
         if (hasText(query.tag())) {
             Pattern p = Pattern.compile("^" + Pattern.quote(query.tag()) + "$", Pattern.CASE_INSENSITIVE);
-            ands.add(Criteria.where("tags").regex(p));
+            ands.add(Criteria.where("tags").elemMatch(Criteria.where("$regex").is(p)));
         }
         if (hasText(query.q())) {
             Pattern rx = Pattern.compile(Pattern.quote(query.q()), Pattern.CASE_INSENSITIVE);
@@ -229,7 +229,7 @@ public class MongoFileMetadataRepository implements MetadataRepository {
         }
         if (hasText(query.tag())) {
             Pattern p = Pattern.compile("^" + Pattern.quote(query.tag()) + "$", Pattern.CASE_INSENSITIVE);
-            q.addCriteria(where("tags").regex(p));
+            q.addCriteria(where("tags").elemMatch(where("$regex").is(p)));
         }
     }
 
