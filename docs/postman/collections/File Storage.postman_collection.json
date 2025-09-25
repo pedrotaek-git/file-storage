@@ -1,0 +1,222 @@
+{
+  "info": {
+    "name": "File Storage",
+    "_postman_id": "b6b7d1e0-0a4f-4dc4-9b3a-aaa000111222",
+    "description": "Minimal collection to validate the File Storage API locally.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "userId",
+      "value": "u1"
+    },
+    {
+      "key": "fileId",
+      "value": ""
+    },
+    {
+      "key": "linkId",
+      "value": ""
+    },
+    {
+      "key": "timestamp",
+      "value": "1699999999999"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/actuator/health"
+      }
+    },
+    {
+      "name": "Upload PUBLIC (Demo)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          }
+        ],
+        "url": "{{baseUrl}}/files",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "metadata",
+              "type": "text",
+              "contentType": "application/json",
+              "value": "{\"filename\":\"demo-{{timestamp}}.txt\",\"visibility\":\"PUBLIC\",\"tags\":[\"Demo\"]}"
+            },
+            {
+              "key": "file",
+              "type": "file",
+              "src": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "List PUBLIC by tag (demo)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/files/public?tag=demo"
+      }
+    },
+    {
+      "name": "List by OWNER (demo)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          }
+        ],
+        "url": "{{baseUrl}}/files?tag=demo&sortBy=FILENAME&sortDir=ASC&page=0&size=10"
+      }
+    },
+    {
+      "name": "Rename (owner only)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/files/{{fileId}}/name",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"newFilename\":\"renamed-{{timestamp}}.txt\"}"
+        }
+      }
+    },
+    {
+      "name": "Download by link",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/d/{{linkId}}"
+      }
+    },
+    {
+      "name": "Upload PRIVATE (secret)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          }
+        ],
+        "url": "{{baseUrl}}/files",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "metadata",
+              "type": "text",
+              "contentType": "application/json",
+              "value": "{\"filename\":\"secret-{{timestamp}}.txt\",\"visibility\":\"PRIVATE\",\"tags\":[\"secret\"]}"
+            },
+            {
+              "key": "file",
+              "type": "file",
+              "src": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "List PUBLIC by tag (secret) \u2014 should be []",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/files/public?tag=secret"
+      }
+    },
+    {
+      "name": "Negative: upload without X-User-Id \u2192 400",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/files",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "metadata",
+              "type": "text",
+              "contentType": "application/json",
+              "value": "{\"filename\":\"no-user.txt\",\"visibility\":\"PUBLIC\"}"
+            },
+            {
+              "key": "file",
+              "type": "file",
+              "src": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Duplicate name/content (409) \u2014 run twice changing only filename/content as needed",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "u2"
+          }
+        ],
+        "url": "{{baseUrl}}/files",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "metadata",
+              "type": "text",
+              "contentType": "application/json",
+              "value": "{\"filename\":\"dup.txt\",\"visibility\":\"PRIVATE\",\"tags\":[\"x\"]}"
+            },
+            {
+              "key": "file",
+              "type": "file",
+              "src": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Delete (owner)",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          }
+        ],
+        "url": "{{baseUrl}}/files/{{fileId}}"
+      }
+    }
+  ]
+}
