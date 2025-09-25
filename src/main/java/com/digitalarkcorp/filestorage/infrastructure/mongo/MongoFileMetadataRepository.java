@@ -68,7 +68,6 @@ public class MongoFileMetadataRepository implements MetadataRepository {
         );
     }
 
-
     @Override
     public FileMetadata findById(String id) {
         FileMetadataDocument d = mongo.findById(id, FileMetadataDocument.class, COL);
@@ -104,8 +103,9 @@ public class MongoFileMetadataRepository implements MetadataRepository {
 
         if (hasText(query.tag())) {
             Pattern p = Pattern.compile("^" + Pattern.quote(query.tag()) + "$", Pattern.CASE_INSENSITIVE);
-            ands.add(Criteria.where("tags").elemMatch(Criteria.where("$regex").is(p)));
+            ands.add(Criteria.where("tags").regex(p));
         }
+
         if (hasText(query.q())) {
             Pattern rx = Pattern.compile(Pattern.quote(query.q()), Pattern.CASE_INSENSITIVE);
             ands.add(Criteria.where("filename").regex(rx));
@@ -131,7 +131,6 @@ public class MongoFileMetadataRepository implements MetadataRepository {
         var docs = mongo.find(q, FileMetadataDocument.class, COL);
         return docs.stream().map(this::map).toList();
     }
-
 
     private Query ownerQuery(String ownerId, ListQuery query) {
         Criteria c = Criteria.where("ownerId").is(ownerId);
@@ -174,7 +173,7 @@ public class MongoFileMetadataRepository implements MetadataRepository {
 
         if (hasText(query.tag())) {
             Pattern p = Pattern.compile("^" + Pattern.quote(query.tag()) + "$", Pattern.CASE_INSENSITIVE);
-            ands.add(Criteria.where("tags").elemMatch(Criteria.where("$regex").is(p)));
+            ands.add(Criteria.where("tags").regex(p));
         }
         if (hasText(query.q())) {
             Pattern rx = Pattern.compile(Pattern.quote(query.q()), Pattern.CASE_INSENSITIVE);
@@ -230,8 +229,7 @@ public class MongoFileMetadataRepository implements MetadataRepository {
         }
         if (hasText(query.tag())) {
             Pattern p = Pattern.compile("^" + Pattern.quote(query.tag()) + "$", Pattern.CASE_INSENSITIVE);
-            // antes: q.addCriteria(where("tags").regex(p));
-            q.addCriteria(where("tags").elemMatch(where("$regex").is(p)));
+            q.addCriteria(where("tags").regex(p));
         }
     }
 

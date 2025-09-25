@@ -1,232 +1,165 @@
 # File Storage Service
 
-A minimal file storage API built with **Java 17** and **Spring Boot 3**, using **MongoDB** for metadata and **S3-compatible storage (MinIO)** for file blobs. The service exposes endpoints to **upload**, **list**, **rename**, **download** (via public links) and **delete** files, respecting **visibility** (PUBLIC/PRIVATE), **tags**, **hash-based dedup rules** and **owner-based authorization**.
+A small **file storage** HTTP API I built with **Java 17 + Spring Boot 3**, **MongoDB**, and **MinIO (S3-compatible)**.  
+It supports authenticated uploads (via a simple `X-User-Id` header), listing (owner and public), **tag filtering (case-insensitive)**, sorting + pagination, **download by link** with proper streaming headers, **rename**, and **delete** (which invalidates the download link).
 
-> This repository is a compact, production-lean MVP that demonstrates clean layering (Ports & Adapters / “Hexagonal”), practical trade‑offs, and thorough verification with cURL and tests.
-
----
-
-## Table of Contents
-- [Quick Start](#quick-start)
-- [Requirements](#requirements)
-- [Tech Stack & Architecture](#tech-stack--architecture)
-- [Business Rules (overview)](#business-rules-overview)
-- [How to Validate the API](#how-to-validate-the-api)
-    - [Using Postman (recommended)](#using-postman-recommended)
-    - [Using cURL (one-liners)](#using-curl-one-liners)
-- [Project Structure](#project-structure)
-- [Testing](#testing)
-- [Operational Notes](#operational-notes)
-- [What I would improve with more time](#what-i-would-improve-with-more-time)
-- [Short Q&A (reflection)](#short-qa-reflection)
+> This repository is intentionally designed with a **hexagonal (ports & adapters)** flavor: the domain is isolated behind ports (`MetadataRepository`, `StoragePort`), infrastructure provides adapters (Mongo, S3/MinIO, local FS), and the web API is a thin layer.
 
 ---
 
-## Quick Start
+## TL;DR (Quick Start)
 
-> Assumes you already have **Java 17+**, **Docker** and **Docker Compose** installed.
+**Prereqs:** Java 17+, Docker, Docker Compose, curl or Postman.
 
-1. **Start dependencies (MongoDB + MinIO):**
-   ```bash
-   docker compose -f stack_local_environment/docker-compose.yml up -d
-   ```
+1) **Start dependencies** (Mongo + MinIO):
 
-2. **Run the application (choose one):**
-    - Gradle:
-      ```bash
-      ./gradlew clean bootRun
-      ```
-    - Jar (after building):
-      ```bash
-      ./gradlew clean build
-      java -jar build/libs/file-storage.jar
-      ```
-
-3. **Healthcheck:**
-   ```bash
-   curl -sS http://localhost:8080/actuator/health | jq -r .status
-   # should print: UP
-   ```
-
-> MinIO Console is at http://localhost:9001 (user/pass: `minioadmin` / `minioadmin`). The app auto-creates the bucket configured in `application.yml` on startup.
-
----
-
-## Requirements
-
-- **Java**: 17+
-- **Docker & Docker Compose**
-- **(Optional) Postman**: Import the collection at `docs/postman/collections/File Storage.postman_collection.json`.
-
----
-
-## Tech Stack & Architecture
-
-- **Language/Framework**: Java 17, Spring Boot 3.4
-- **Metadata Store**: MongoDB 7.x
-- **Blob Store**: S3-compatible (MinIO)
-- **Build**: Gradle (Kotlin DSL)
-- **Observability**: Spring Boot Actuator (health/config/beans)
-- **Architecture**: Ports & Adapters (“Hexagonal”)
-    - **Domain** defines **ports** (`StoragePort`, `MetadataRepository`) and core model (`FileMetadata`, `Visibility`, `FileStatus`).
-    - **Infrastructure** provides adapters: **S3/MinIO**, **Mongo**, (and a **Local FS** adapter for dev).
-    - **Application** orchestrates business rules; **API** exposes REST controllers.
-- **Why this approach?**
-    - Easy to swap storage/repo implementations.
-    - Pure domain logic stays testable and independent from frameworks.
-    - Minimal surface yet production-friendly configuration (indices, bucket init).
-
-> Note: This service is **not** event-driven and does **not** use messaging or MySQL. It intentionally focuses on the simplest reliable stack to satisfy the core requirements.
-
----
-
-## Business Rules (overview)
-
-- **Upload** (`/files`, multipart):
-    - Requires header **`X-User-Id`**.
-    - Visibility: **PUBLIC** or **PRIVATE**.
-    - Tags: optional list of strings.
-    - Computes **content hash** and stores alongside metadata.
-    - **Conflicts (409)** when:
-        - same **owner + filename** already exists, or
-        - same **owner + content hash** already exists.
-    - Different owners can upload the same content.
-- **List public** (`/files/public`):
-    - Filter by **tag** (case-insensitive); pagination + sorting.
-- **List by owner** (`/files` with `X-User-Id`):
-    - Same filters/pagination/sorting scoped by owner.
-- **Rename** (`PATCH /files/{{id}}/name`):
-    - Only the **owner** can rename (403 otherwise).
-- **Download by link** (`GET /d/{{linkId}}`):
-    - Returns the blob with headers: `ETag` (hash), `Content-Disposition`, `Accept-Ranges`, `Content-Type`, `Content-Length`.
-- **Delete** (`DELETE /files/{{id}}` with owner header):
-    - Removes metadata and **invalidates the link** (subsequent downloads return 404).
-
----
-
-## How to Validate the API
-
-### Using Postman (recommended)
-
-1. Open Postman and **Import** the collection:
-    - `docs/postman/collections/File Storage.postman_collection.json`
-
-2. Set a collection variable:
-    - `baseUrl = http://localhost:8080`
-
-3. Run requests in order:
-    - **Health / Actuator**
-    - **Upload – PUBLIC (Demo tag)** → copy `id`, `linkId`, `contentHash`
-    - **List public by tag (demo)** → should return the file
-    - **List by owner (demo)** → header `X-User-Id: u1`
-    - **Rename (owner ok)** → PATCH `/files/{id}/name`
-    - **Download by link** → check headers; the `ETag` equals the `contentHash`
-    - **Upload – PRIVATE (secret tag)** → should NOT show in public listing
-    - **Negative upload (no user header)** → 400
-    - **Duplicate name/content** → 409 rules
-    - **Delete** → then **Download by link** should be 404
-
-### Using cURL (one-liners)
-
-> The collection contains the same flows. Here are two quick starters:
-
-- **Upload PUBLIC with Demo tag**
-  ```bash
-  TS=$(date +%s%N); echo "demo-$TS" > /tmp/demo-$TS.txt
-  curl -sS -X POST {{baseUrl}}/files -H "X-User-Id: u1"     -F "metadata={{"filename":"demo-$TS.txt","visibility":"PUBLIC","tags":["Demo"]}};type=application/json"     -F "file=@/tmp/demo-$TS.txt;type=text/plain" | jq .
-  ```
-
-- **List public by tag (case-insensitive)**
-  ```bash
-  curl -sS "{{baseUrl}}/files/public?tag=demo" | jq '.[].filename'
-  ```
-
-> For a complete shell walkthrough, see the Postman requests which mirror the end-to-end scenarios.
-
----
-
-## Project Structure
-
+```bash
+docker compose -f stack_local_environment/docker-compose.yml up -d
 ```
-src
-├── main
-│   ├── java/com/digitalarkcorp/filestorage
-│   │   ├── api            # REST controllers + DTOs + error handling
-│   │   ├── application    # orchestration/use cases
-│   │   ├── domain         # core model + ports (no Spring)
-│   │   └── infrastructure # adapters: s3/minio, mongo, fs + config
-│   └── resources
-│       └── application.yml
-└── test
-    └── java/com/digitalarkcorp/filestorage
-        ├── DefaultFileServiceUnitTest           # core business rules
-        ├── DeleteInvalidatesLinkTest            # link invalidation behavior
-        ├── api/DownloadControllerHeadersTest    # HTTP headers contract
-        └── FileStorageApplicationTests          # fast smoke
+
+Wait until MinIO is healthy at <http://localhost:9000/minio/health/ready>.
+
+2) **Build & run**:
+
+```bash
+./gradlew clean build
+./gradlew bootRun
+# or: java -jar build/libs/file-storage.jar
+```
+
+3) **Health**:
+
+```bash
+curl -sS http://localhost:8080/actuator/health | jq .
 ```
 
 ---
 
-## Testing
+## Business Rules (what the API enforces)
 
-- **Build & unit tests**
-  ```bash
-  ./gradlew clean build
-  # reports:
-  # - unit: build/reports/tests/test/index.html
-  ```
+- **Upload** requires header `X-User-Id` and a multipart body with JSON metadata (`filename`, `visibility`: `PUBLIC`/`PRIVATE`, optional `tags`) + file content.
+- **Conflicts** (HTTP 409):
+    - same owner **and** same `filename` → conflict.
+    - same owner **and** **same content** (SHA-256) → conflict (even with a different filename).
+    - different owners can upload the **same content** (no conflict).
+- **List (owner)**: `GET /files` (requires `X-User-Id`). Optional `tag` (case-insensitive), `sortBy` (`FILENAME|SIZE|CREATED_AT`), `sortDir` (`ASC|DESC`), `page`, `size`.
+- **List public**: `GET /files/public` with the same query model, but no auth header required.
+- **Rename**: only the **owner** may rename (`PATCH /files/{id}/name`).
+- **Delete**: only the **owner** may delete (`DELETE /files/{id}`); deletes also **invalidate the download link**.
+- **Download**: `GET /d/{linkId}` returns content with headers:
+    - `Content-Disposition: attachment; filename="download.bin"`
+    - `Accept-Ranges: bytes`
+    - `Content-Type`
+    - `Content-Length`
+    - `ETag: "{contentHash}"`
+- **Validation**: missing `X-User-Id` → **400**; invalid filename (empty or ≥ 256 chars) → **400**.
 
-- **Coverage (optional)**
-  If you enable the JaCoCo plugin in `build.gradle.kts`:
-  ```kotlin
-  plugins { jacoco }
-  tasks.test { finalizedBy(tasks.jacocoTestReport) }
-  jacocoTestReport { reports { xml.required.set(true); html.required.set(true) } }
-  ```
-  Then run:
-  ```bash
-  ./gradlew test jacocoTestReport
-  # report: build/reports/jacoco/test/html/index.html
-  ```
-
-- **Why these tests?**
-    - Focus on **what matters**: business rules (duplicates, ownership, visibility) and **HTTP contract** for downloads.
-    - Fast, isolated (no need to boot infra) thanks to **ports/adapters** and fakes.
+> **Tags filter:** the API accepts any list of tags at upload; for listing we support **one `tag` filter** (case-insensitive).  
+> If multi-tag queries become a hard requirement, I’d add a richer domain `QuerySpec` and map the HTTP DTO to it (see “Improvements”).
 
 ---
 
-## Operational Notes
+## Architecture (short)
 
-- **Actuator**
-    - `GET /actuator/health` → `UP`
-    - `GET /actuator/beans` → confirms which storage adapter is active (S3StorageAdapter vs Local)
-    - `GET /actuator/configprops` → storage configuration overview
-- **Mongo Indexes**
-    - Created on startup (unique by `(ownerId, filename)` and `(ownerId, contentHash)`, plus secondary indexes).
-- **MinIO**
-    - Bucket auto-created if missing; credentials are configured in `application.yml` (local-only defaults).
+- **Hexagonal**: domain (entities + services + ports) doesn’t depend on web/docs/infra.
+- **Ports**: `MetadataRepository` (Mongo adapter), `StoragePort` (S3/MinIO or Local adapter).
+- **API**: thin `FileController` + `DownloadController`. Global exception handler maps **business errors** to HTTP.
+- **Observability**: Spring Boot Actuator; also exposes storage config via `/actuator/configprops` for quick verification.
+- **Indexes** (Mongo): unique on `(ownerId, filename)` and `(ownerId, contentHash)`, plus helpful secondary indexes.
 
 ---
 
-## What I would improve with more time
+## How to validate with **Postman** (recommended)
 
-- **Decouple API query DTO from domain**: introduce a domain `QuerySpec` + `QueryMappers` in the API layer.
-- **Domain exceptions vs HTTP exceptions**: let the domain throw `DomainConflict/DomainForbidden`, the API maps to 409/403/404 cleanly.
-- **Metrics**: Micrometer + Prometheus/Grafana for storage latencies and Mongo timings.
-- **Download filename**: serve the original filename on `Content-Disposition` instead of `download.bin`.
-- **CI**: use GHCR + buildx with cache to avoid DockerHub rate-limit (and speed up builds).
+1) **Import** the collection and environment from this repo:
+    - `docs/postman/file-storage.postman_collection.json`
+    - `docs/postman/file-storage.postman_environment.json`
+
+2) **Set environment variables**:
+    - `baseUrl` = `http://localhost:8080`
+    - `owner1` = `u1`
+    - `owner2` = `u2`
+
+3) **Attach an actual file** for each “Upload …” request (the first time you run them).  
+   I included two samples to avoid content-hash conflicts across runs:
+    - `docs/samples/sample-A.txt` (hash: `3d0ec6fbdc6d551ee82d954011f0c5a66e2c0da932b3349f565cddc149ab1e46`)
+    - `docs/samples/sample-B.txt` (hash: `0936305c0e3814234ef49ad30f83f734eb91f6515114a02771ad4cf12b471e45`)
+
+   > **Why two files?** The domain rejects duplicate **content** for the same owner. If you re-run with the same file content, you’ll get `409 conflict`. Use the other sample or edit the file.
+
+4) **Run the folder “01 – Happy Path”** in order; the collection scripts:
+    - capture `id`, `linkId`, `contentHash` from Upload,
+    - verify Listing (owner + public by tag),
+    - Rename (authorized = 200, unauthorized = 403),
+    - Download and assert streaming headers and `ETag == contentHash`,
+    - Upload a PRIVATE file with tag `secret` and assert it **doesn’t** show in public listings,
+    - negative checks (missing header = 400, duplicate name/content = 409),
+    - delete and ensure link returns **404**,
+    - pagination sanity.
+
+> If you prefer **curl**, see `docs/curl/quick-check.sh` (it mirrors the Postman flow and was used to validate the app end-to-end).
 
 ---
 
-## Short Q&A (reflection)
+## Running tests & coverage
 
-- **What did I enjoy the most?**  
-  Turning a small set of requirements into a tidy **hexagonal** service where swapping infra is trivial felt great. The domain-first ports kept tests lean and fast.
+```bash
+./gradlew clean test
+# HTML report:
+open build/reports/tests/test/index.html
+```
 
-- **Hardest decision?**  
-  Choosing the thinnest viable surface for business rules (duplicates, ownership, visibility) without overengineering. Keeping controllers simple and pushing logic into the application layer.
-
-- **If I had more time, what would I change first?**  
-  The **query DTO** crossing layers and the **exception mapping** boundaries (see “What I would improve”). I’d also expand observability and polish CI/CD.
+Unit tests focus on **domain/service behavior** (conflicts, rename auth, list filters, delete invalidates link) and a small API header test for the download controller.
 
 ---
+
+## CI & Docker image
+
+In CI I build & test with Gradle. Optionally, building a Docker image in CI validates the **Dockerfile** and produces a **reproducible artifact** you could push to a registry. It isn’t required to run locally (Compose already starts Mongo/MinIO), but it’s useful for deployments.
+
+---
+
+## Improvements I would make with more time
+
+- Introduce a **domain-level QuerySpec** and map HTTP `ListQuery` to it (decouples API DTOs from domain and unlocks richer filters like multi-tag AND/OR).
+- Raise **domain-specific exceptions** from the service and adapt them in the API layer.
+- Byte-range (`206 Partial Content`) support for large downloads (Accept-Ranges is already announced).
+- Add integration tests against real Mongo + MinIO (Testcontainers) on CI.
+- Validation annotations/messages localized.
+- Optional presigned URLs and link expiration.
+- Replace simple `X-User-Id` header with proper auth in production.
+
+---
+
+
+## Requirements → Validation matrix
+
+Below I map each requirement to how to validate it in this repo (via Postman or curl), and call out scope notes. Citations refer to the assignment PDF (see repo).
+
+| Requirement | Where to validate | Notes |
+|---|---|---|
+| Upload with filename, visibility PUBLIC/PRIVATE, and tags (≤5) | Postman “01 – Happy Path → Upload PUBLIC (Demo)” and “Upload PRIVATE (secret)” | Tags are accepted and case-insensitive for filtering. I didn’t hard-enforce “≤5” (kept lean). |
+| Rename filename | Postman “Rename (owner1)” (200) and “Rename unauthorized (owner2) => 403” | Unauthorized rename is blocked. |
+| List files: all PUBLIC; all for USER | Postman “List PUBLIC (tag=dEmO)” and “List by Owner (tag=demo)” | Both endpoints exist and are covered. |
+| Lists have filter by TAG (case-insensitive), sorting, pagination | Postman “List …” items; query params `tag`,`sortBy`,`sortDir`,`page`,`size` | I implemented sorting by **FILENAME**, **UPLOAD DATE** (createdAt), and **FILE SIZE**. Sorting by **TAG** and **CONTENT TYPE** are not implemented. Pagination supported. |
+| Delete only by owner | Postman “Delete (owner1)” (200) and negative delete (403) | After delete, download link returns 404. |
+| Detect file type after upload if not provided | Observed via response `contentType` | Present; full mime-sniffing left as small improvement. |
+| Unique download link, downloadable for PUBLIC/PRIVATE | Postman “Download by link (check headers)” | Link is UUID; headers include `ETag`, `Content-Length`, etc. |
+| Prevent duplicate upload by same owner by **filename** or **content** | Postman “Duplicate … => 409” items | Different owners can upload the same content (covered). |
+| Non-functional: container memory ≤ 1GB; disk ≤ 200MB | See **Run with resource limits** | Memory via `--memory=1g`; disk layer limit varies by storage driver. |
+| CI builds target Docker image | GitHub Actions | Image build step verifies Dockerfile. |
+
+### Postman “Good practices” for this project
+- Set environment variables first (baseUrl, owner1, owner2).
+- For re-runs, switch the sample file (A ↔ B) or edit the file; duplicate content per owner is a **409**.
+- The collection auto-captures `fileId`, `linkId`, `contentHash` and reuses them.
+- Follow folder order; negative cases live in “02 – Negative / Edge Cases”.
+
+## curl runner (mirrors Postman “Happy Path”)
+Run:
+
+```bash
+bash docs/curl/quick-check.sh
+```
+
+It uploads, lists, renames, downloads (verifies ETag), uploads a private “secret”, tests authorization, deletes, validates link 404, and runs a small **concurrency** check (two parallel uploads of the same content).
